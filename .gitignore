@@ -1,0 +1,33 @@
+# 依赖与构建产物
+node_modules/
+dist/
+runtime/
+logs/
+
+# 本地配置与凭证（永不入仓）
+*.local.yaml
+providers.yaml
+sync.config.json
+.env
+.env.*
+.credentials*
+*.pem
+*.key
+
+# 离线组件缓存（本机构建资产，由 scripts/download-vendor.sh 获取）
+vendor/
+
+# 打包产物（含注入凭证，严禁入仓）
+build/
+*.zip
+*.7z
+
+# 比赛工作区（独立私有仓，本地克隆不入开发仓）
+mmcas-workspace/
+
+# 系统杂项
+.DS_Store
+Thumbs.db
+
+# 队友反馈快照（含未吊销凭证与个人数据，严禁入仓）
+feedback/

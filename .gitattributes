@@ -1,0 +1,4 @@
+# Windows 批处理/脚本强制 CRLF：git 默认 LF 会导致 cmd 解析异常（队友端闪退事故 2026-09-09）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

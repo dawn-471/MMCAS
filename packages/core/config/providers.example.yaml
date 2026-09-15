@@ -1,0 +1,27 @@
+# providers.yaml —— 多 API 来源配置（本地文件，不入仓）
+
+# 复制本文件为 providers.yaml 并填写真实 key。
+# 支持任意数量的官方 API 与中转站；UI 切换 = 改 default 或面板选择。
+
+providers:
+  - id: deepseek
+    name: DeepSeek 官方
+    base_url: https://api.deepseek.com
+    api_key: sk-your-key-here
+    models:
+      # V4.1-Flash 限时内测版：2026-09-08 上线、2026-09-10 下线，计费同 v4-flash，每账号 20 并发。
+      # switch 默认取列表首项；内测版过期后请删除本行或改用正式模型名。
+      - deepseek-v4.1-flash-expires-on-0910
+      - deepseek-v4-pro
+      - deepseek-v4-flash
+
+  - id: relay-example
+    name: 中转站示例
+    base_url: https://relay.example.com/v1
+    api_key: sk-your-key-here
+    models:
+      - model-name-1
+      - model-name-2
+
+# 默认使用的 provider id
+default: deepseek

@@ -1,0 +1,9 @@
+# MMCAS sshd template (Win32-OpenSSH; fixed template, overwritten on every setup run)
+# 注意：Win32-OpenSSH 的 scp/sftp 子系统行，未来打包自动携带
+Port 22
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+Subsystem sftp "C:\Program Files\OpenSSH-Win64\sftp-server.exe"
+Match Group administrators
+        AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys

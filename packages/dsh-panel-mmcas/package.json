@@ -1,0 +1,29 @@
+{
+  "name": "@mmcas/dsh-panel",
+  "version": "0.1.0",
+  "description": "MMCAS command center panel for dsh web (task kanban, artifacts, devices, memory)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client.d.ts",
+      "default": "./lib/client.js"
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web"
+    }
+  }
+}

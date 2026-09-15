@@ -1,0 +1,13 @@
+{
+  "repoDir": "C:/path/to/mmcas-workspace",
+  "gitBin": "git",
+  "pullIntervalSec": 60,
+  "idleWaitSec": 10,
+  "conflictRetrySec": 300,
+  "pushMaxRetries": 5,
+  "authorName": "mmcas-coder",
+  "authorEmail": "coder@mmcas.local",
+  "remote": "origin",
+  "branch": "main",
+  "logDir": "C:/Users/you/.mmcas/logs"
+}

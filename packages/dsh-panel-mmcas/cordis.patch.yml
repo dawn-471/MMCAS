@@ -1,0 +1,6 @@
+# @mmcas/dsh-panel bundle patch（默认 config；每机 workspaceDir 由 profile 级 patch 覆盖）
+- insert:
+    - id: mmcas-panel
+      name: '@mmcas/dsh-panel'
+      config:
+        workspaceDir: ''
