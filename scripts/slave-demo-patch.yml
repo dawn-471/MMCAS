@@ -36,7 +36,7 @@
       ## Task Card Operations
 
       - Read: `node {CORE}/taskcard/taskcard.mjs list tasks`, or read tasks/*.md directly.
-      - Claim (todo→doing) and finish (doing→done): ONLY via `node {CORE}/taskcard/taskcard.mjs update tasks <id> <doing|done>` — the guardrail enforces deps-done and WIP ≤ 2. Never edit the status: line of a card file directly.
+      - Claim (todo→doing) and finish (doing→done): ONLY via `node {CORE}/taskcard/taskcard.mjs update tasks <id> <doing|done>` — the guardrail enforces deps-done gates; parallelism is unlimited by default (optional cap via MMCAS_WIP_LIMIT). Never edit the status: line of a card file directly.
       - Body edits (progress, results, run logs, annotations): edit the card file directly.
       - You never create cards (the modeler dispatches them) — request new work through the modeler; do not delete cards.
 
@@ -53,6 +53,7 @@
     workspaceDir: {WORKSPACE}   # 使用前替换为实际路径
     role: coder
     port: 3211
+    # coreDir: <含 packages/core 的目录>   # 可选：仅当插件为实体拷贝布局时需显式指定（含 core/ 的包布局自动探测）
 # subagent 启用（三端一致）
 - id: subagent
   disabled: false
@@ -66,3 +67,17 @@
   disabled: false
 - id: tool-subagent
   disabled: false
+# 启用压缩三件套（v1.2；与三端一致——dsh-web-app 默认禁用）
+- id: compaction-basic
+  disabled: false
+  config:
+    thresholdRatio: 0.7
+    retainTokens: 8192
+- id: command-compact
+  disabled: false
+- id: tool-result-pruner
+  disabled: false
+  config:
+    thresholdChars: 8192
+    headChars: 4096
+    tailChars: 1024

@@ -8,6 +8,7 @@
  *   - deploy-keys/mmcas-<role>（git deploy key 私钥）
  *   - apikeys/<role>.txt（可选预配 API key）
  */
+import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -69,6 +70,7 @@ cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-agent.bat'), path.joi
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-panel.bat'), path.join(PKG, 'core', 'start-panel.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-bridge.bat'), path.join(PKG, 'core', 'start-bridge.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'enable-ssh.ps1'), path.join(PKG, 'core', 'enable-ssh.ps1'));
+cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'update-ssh-command.mjs'), path.join(PKG, 'core', 'update-ssh-command.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'sshd_config.template'), path.join(PKG, 'core', 'sshd_config.template'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'fix-ssh.bat'), path.join(BUILD, 'fix-ssh.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'codex-bridge', 'codex-bridge.mjs'), path.join(PKG, 'core', 'codex-bridge', 'codex-bridge.mjs'));
@@ -86,6 +88,17 @@ if (ROLE === 'modeler' && existsSync(path.join(ROOT, 'packages', 'common', 'skil
 }
 // dsh 内嵌面板插件（整包拷贝，write-config 挂载进 web profile）
 cpSync(path.join(ROOT, 'packages', 'dsh-panel-mmcas'), path.join(PKG, 'plugins', 'dsh-panel-mmcas'), { recursive: true });
+
+// v1.2：独立审计 / notices / 回归测试套件（随包，供审计室调用与队友侧自检）
+mkdirSync(path.join(PKG, 'core', 'audit'), { recursive: true });
+mkdirSync(path.join(PKG, 'core', 'notices'), { recursive: true });
+cpSync(path.join(ROOT, 'packages', 'core', 'audit'), path.join(PKG, 'core', 'audit'), { recursive: true });
+cpSync(path.join(ROOT, 'packages', 'core', 'notices'), path.join(PKG, 'core', 'notices'), { recursive: true });
+cpSync(path.join(ROOT, 'packages', 'core', 'sync', 'test-sync-daemon-detector.mjs'), path.join(PKG, 'core', 'sync', 'test-sync-daemon-detector.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'sync', 'test-sync-daemon-guard.ps1'), path.join(PKG, 'core', 'sync', 'test-sync-daemon-guard.ps1'));
+cpSync(path.join(ROOT, 'packages', 'core', 'taskcard', 'test-taskcard.mjs'), path.join(PKG, 'core', 'taskcard', 'test-taskcard.mjs'));
+// v1.2：包内容复查脚本（收包后自检；配合 T6.4 装包演练）
+cpSync(path.join(ROOT, 'scripts', 'audit-recheck.sh'), path.join(BUILD, 'MMCAS-audit-recheck.sh'));
 
 // 4. setup.bat 注入角色 + 诊断脚本随包（诊断队友环境用；GBK 转换在归一化阶段统一处理）
 let setup = readFileSync(path.join(ROOT, 'packages', 'core', 'setup', 'setup.bat'), 'utf8');
@@ -163,3 +176,10 @@ if (r.status !== 0) {
   process.exit(1);
 }
 console.log('打包完成:', zip);
+
+// v1.2：SHA-256 清单（三端发布对账）
+const sha = createHash('sha256').update(readFileSync(zip)).digest('hex');
+const shaFile = zip.replace(/\.zip$/, '.sha256');
+writeFileSync(shaFile, sha + '  MMCAS-' + ROLE + '.zip\n');
+console.log('SHA-256:', sha);
+console.log('清单:', shaFile);

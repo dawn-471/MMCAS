@@ -40,6 +40,7 @@
  * 一个会把"事故记录"挡在门外的守卫，比没有守卫更糟（它会逼人绕过它）。
  * ⇒ 收紧为：**非法码点在代码文件里硬拦截**（那里不可能是善意的，编译/词法必崩），
  *   在散文/数据文件里**只告警**（可能是引用样例，本项目确实存在）。冲突标记的判定不变（仍然硬拦截）。
+ *   v1.2 结案：数据类按扩展名豁免——JSON/JSONL/CSV 等文件即使在代码目录下（如工具日志）也只告警（见 CODE_EXT 注释）。
  */
 
 import { spawn } from 'node:child_process';
@@ -118,6 +119,14 @@ function readState() {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// v1.2 T5.3：心跳——主循环每轮刷新状态文件（面板看门狗据新鲜度判断 daemon 存活）
+function heartbeat() {
+  try {
+    const prev = readState() || {};
+    setState({ ...prev, lastHeartbeat: new Date().toISOString() });
+  } catch { /* 心跳失败不致命 */ }
 }
 
 // 单实例锁（含 stale 检测：异常退出留下的锁，若持有进程已不存在则自动接管）
@@ -215,6 +224,8 @@ const TEXT_EXT = new Set([
 ]);
 
 // v0.2.1：非法码点只有落在**代码**里才硬拦截（散文/数据可能是在引用事故样例）
+// v1.2 结案（回应队友端边界疑问）：数据文件按扩展名豁免——.json/.jsonl/.csv 等不在本表，
+// 代码目录下的 JSON 日志（如归档/重压工具日志）只告警、不会冻结同步轮。测试锁定：test-sync-daemon-detector.mjs [6] / guard.ps1 B5。
 const CODE_EXT = new Set([
   '.py', '.mjs', '.cjs', '.js', '.ts', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.bat', '.ps1', '.sh',
 ]);
@@ -454,6 +465,7 @@ async function main() {
       setState({ mode: 'error', lastEvent: String(e.message) });
     }
     const elapsed = Date.now() - t0;
+    heartbeat();   // v1.2 T5.3：每轮刷新心跳（面板看门狗依据）
     const wait = conflictMode ? cfg.conflictRetrySec : Math.max(1, cfg.pullIntervalSec - Math.floor(elapsed / 1000));
     await sleep(wait * 1000);
   }

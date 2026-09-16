@@ -54,6 +54,9 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_VERSION = 'v2.6-toolbridge';
+// v1.2 T5.4：上游健康度——模块级（fail/成功路径与 /health 共同引用）
+let lastUpstreamError = null;
+let lastSuccessAt = null;
 
 const DEFAULTS = {
   host: '127.0.0.1',
@@ -442,6 +445,11 @@ function streamCodex(cfg, codexCmd, model, prompt, res, log, toolNames, onDone) 
     if (finished) return;
     finished = true;
     log(`✗ ${model} 失败: ${err}`);
+    try {
+      const s = String(err);
+      const m = s.match(/\b(401|402|403|429)\b/);
+      lastUpstreamError = { at: new Date().toISOString(), status: m ? Number(m[1]) : null, message: s.replace(/\s+/g, ' ').slice(0, 300) };
+    } catch { /* 记录失败不致命 */ }
     sendSSE(res, 'response.failed', {
       type: 'response.failed',
       response: {
@@ -533,6 +541,7 @@ function streamCodex(cfg, codexCmd, model, prompt, res, log, toolNames, onDone) 
       idx += 1;
     }
 
+    lastSuccessAt = new Date().toISOString();
     sendSSE(res, 'response.completed', {
       type: 'response.completed',
       response: {
@@ -634,6 +643,8 @@ function main() {
         codexHome: cfg.codexHome || null,
         proxy: cfg.proxy || null,
         inFlight,
+        lastUpstreamError,   // v1.2 T5.4：最近上游错误（含 401/402/429 状态码）
+        lastSuccessAt,       // v1.2 T5.4：最近一次成功时间
       }));
       return;
     }

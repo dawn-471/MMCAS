@@ -73,7 +73,11 @@ if (existsSync(roleFile)) {
     '- id: tool-str-replace-editor\n  disabled: false\n' +
     '# 禁用 dsh 模式切换（agent preset）——MMCAS 只保留单一 persona，杜绝 standard 预设顶掉 Role 文档\n' +
     '- id: agent-presets\n  disabled: true\n' +
-    '- id: ui-agent-preset\n  disabled: true\n';
+    '- id: ui-agent-preset\n  disabled: true\n' +
+    '# 启用压缩三件套（v1.2：dsh-web-app 默认禁用；presets 禁用后需显式重挂，否则长任务无压缩）\n' +
+    '- id: compaction-basic\n  disabled: false\n  config:\n    thresholdRatio: 0.7\n    retainTokens: 8192\n' +
+    '- id: command-compact\n  disabled: false\n' +
+    '- id: tool-result-pruner\n  disabled: false\n  config:\n    thresholdChars: 8192\n    headChars: 4096\n    tailChars: 1024\n';
   writeFileSync(path.join(webProfile, 'cordis.patch.yml'), patch);
   console.log('[mmcas] dsh web persona 已注入');
 }

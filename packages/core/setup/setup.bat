@@ -106,6 +106,11 @@ if errorlevel 1 (
     echo   StrictHostKeyChecking accept-new
   )
 )
+:: v1.2 修复：已存在的工作区分支也要刷新 repo 级 sshCommand（包迁移/重装后旧路径会让同步 push 全败）；
+:: 刷新由 update-ssh-command.mjs 幂等完成（删旧行 + 写标记新段）。
+:: clone 显式指定 SSH 通道（GIT_SSH_COMMAND env），不依赖用户级 .ssh/config（队友机器可能有旧 GitHub 配置干扰）；
+:: repo 级 sshCommand 由 node 脚本幂等写入（实测 cmd 下 git config 带空格值 128 失败）。
+:: 注：此段之后的括号块内一律不放注释——cmd 对括号块内的连续注释行解析异常（实测会误报系统找不到指定的驱动器）。
 set "REPO="
 if exist "config\workspace-repo.txt" set /p REPO=<"config\workspace-repo.txt"
 if not defined REPO (
@@ -113,26 +118,18 @@ if not defined REPO (
 ) else (
   set "GIT_SSH_COMMAND=ssh -i !SSHKEY! -p 443 -o StrictHostKeyChecking=accept-new -o HostKeyAlias=github.com"
   if exist "workspace\.git" (
-    echo   工作区已存在，跳过克隆
+    echo   工作区已存在，刷新访问配置...
+    node "pkg\core\update-ssh-command.mjs" "workspace" "!SSHKEY!"
+    if errorlevel 1 (set "FAILED=!FAILED! [6]sshCommand刷新") else (echo   OK)
   ) else (
     if exist "workspace" rmdir /s /q workspace
-    :: clone 显式指定 SSH 通道（GIT_SSH_COMMAND env），不依赖用户级 .ssh/config——
-    :: 队友机器可能有旧 GitHub 配置干扰（findstr 去重只查 Host github.com 存在性，会漏）
     git clone -q !REPO! workspace 2>nul
     if not exist "workspace\.git" (
       if exist "workspace" rmdir /s /q workspace
       set "FAILED=!FAILED! [6]工作区克隆"
     ) else (
-      :: repo 级持久化：echo 追加 [core] sshCommand（实测 cmd 下 git config 带空格值会 128，不可靠）
-      :: sync-daemon 后续 fetch/push 走 repo config，同样不依赖用户级 config
-      findstr /c:"sshCommand" "workspace\.git\config" >nul 2>&1
-      if errorlevel 1 (
-        >> "workspace\.git\config" (
-          echo [core]
-          echo     sshCommand = ssh -i !SSHKEY! -p 443 -o StrictHostKeyChecking=accept-new -o HostKeyAlias=github.com
-        )
-      )
-      echo   OK
+      node "pkg\core\update-ssh-command.mjs" "workspace" "!SSHKEY!"
+      if errorlevel 1 (set "FAILED=!FAILED! [6]sshCommand写入") else (echo   OK)
     )
   )
   set "GIT_SSH_COMMAND="
@@ -169,7 +166,7 @@ if exist "pkg\secrets\packy-key.txt" (
   set "WARNED=!WARNED! [8]未预配 PackyAPI key（可选通道）"
 )
 if exist "pkg\secrets\apikey.txt" (
-  node pkg\core\switch-provider.mjs switch deepseek --config "%CD%\config\providers.yaml" --settings "!MMDSH!\settings.yaml" --credentials "!MMDSH!\.credentials.yaml"
+  node pkg\core\switch-provider.mjs switch deepseek --config "%CD%\config\providers.yaml" --settings "!MMDSH!\settings.yaml" --credentials "!MMDSH!\.credentials.yaml" --role %ROLE%
   if errorlevel 1 set "FAILED=!FAILED! [8]provider切换"
 ) else (
   set "WARNED=!WARNED! [8]未预配API key（请在页面填写）"

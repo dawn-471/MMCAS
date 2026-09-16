@@ -4,15 +4,18 @@
  *
  * 用法:
  *   node taskcard.mjs validate <tasksDir>
- *   node taskcard.mjs update <tasksDir> <id> <to-status>
+ *   node taskcard.mjs update <tasksDir> <id> <to-status> [--reason <原因>]   # 打回（done→todo）必填原因
  *   node taskcard.mjs list <tasksDir>
  *   node taskcard.mjs create <tasksDir> <title> --owner <role> --priority <P0|P1|P2> [--deps <T-001,T-002>] [--desc <text>]
+ *   node taskcard.mjs create <tasksDir> <title> --from <coder|writer> [--desc <text>] [--evidence <证据>]   # 回程卡：owner 固定 modeler/P1
  *   node taskcard.mjs edit <tasksDir> <id> [--title <t>] [--owner <role>] [--priority <P0|P1|P2>] [--deps <T-001,T-002>] [--desc <t>]
  *   node taskcard.mjs delete <tasksDir> <id> [--force]
  *
- * 状态机（specs/task-card.md v2）:
+ * 状态机（specs/task-card.md v4）:
  *   todo -> doing -> done
- *   doing -> todo（退回）; done -> doing（打回）
+ *   doing -> todo（退回）; done -> doing（打回，v1.2 语义修订进行中）
+ *
+ * v1.2：WIP 改为可配软约束——环境变量 MMCAS_WIP_LIMIT（正整数；0/缺省 = 不限制，并行以依赖门控为准）。
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
@@ -20,11 +23,12 @@ import path from 'node:path';
 const VALID_STATUS = ['todo', 'doing', 'done'];
 const VALID_ROLES = ['modeler', 'coder', 'writer'];
 const VALID_PRIORITY = ['P0', 'P1', 'P2'];
-const WIP_LIMIT = 2; // 每角色同时 doing 上限
+// v1.2：0/缺省 = 不限制；仅显式配置正整数时按老语义拦截
+const WIP_LIMIT = Math.max(parseInt(process.env.MMCAS_WIP_LIMIT || '0', 10) || 0, 0);
 const TRANSITIONS = {
   todo: ['doing'],
   doing: ['done', 'todo'],
-  done: ['doing'],
+  done: ['todo'],
 };
 
 function arg(name) {
@@ -68,7 +72,7 @@ function parseDepsArg(v) {
   return String(v).replace(/[\[\]']/g, '').split(/[,，\s]+/).map((s) => s.trim()).filter((x) => x);
 }
 
-function checkTransition(card, to, allCards) {
+function checkTransition(card, to, allCards, opts) {
   if (!VALID_STATUS.includes(to)) return { ok: false, reason: `目标状态非法: ${to}` };
   if (!card.valid) return { ok: false, reason: card.error };
   const allowed = TRANSITIONS[card.status] || [];
@@ -81,11 +85,30 @@ function checkTransition(card, to, allCards) {
       return !dep || dep.status !== 'done';
     });
     if (pending.length) return { ok: false, reason: `依赖未完成，等待: ${pending.join(', ')}` };
-    // WIP 限制
+    // WIP 限制（v1.2：仅显式配置 MMCAS_WIP_LIMIT>0 时生效；默认不限制）
     const doingCount = (allCards || []).filter((c) => c.status === 'doing' && c.owner === card.owner).length;
-    if (doingCount >= WIP_LIMIT) return { ok: false, reason: `WIP 超限：${card.owner} 已有 ${doingCount} 个进行中任务（上限 ${WIP_LIMIT}）` };
+    if (WIP_LIMIT > 0 && doingCount >= WIP_LIMIT) return { ok: false, reason: `WIP 超限：${card.owner} 已有 ${doingCount} 个进行中任务（上限 ${WIP_LIMIT}）` };
+  }
+  // v1.2：打回（done→todo）必须带原因；附带下游影响提示（不阻塞）
+  if (to === 'todo' && card.status === 'done') {
+    const reason = String((opts && opts.reason) || '').trim();
+    if (!reason) return { ok: false, reason: '打回必须填写原因（--reason <原因>）' };
+    const dependents = (allCards || []).filter((c) => c.id !== card.id && parseDeps(c).includes(card.id) && c.status !== 'todo');
+    return { ok: true, reason: '', warning: dependents.length ? `打回影响已开始的下游卡：${dependents.map((c) => c.id).join(', ')}（请评估是否连带重做）` : '' };
   }
   return { ok: true, reason: '' };
+}
+
+// v1.2：打回辅助——原因写入批注区；rework 计数（无则置 1）
+function appendReworkNote(text, reason) {
+  const line = `- ${new Date().toISOString().slice(0, 10)} 打回：${reason}`;
+  if (/## 批注\s*\n/.test(text)) return text.replace(/(## 批注\s*\n)/, `$1${line}\n`);
+  return text.trimEnd() + `\n\n## 批注\n${line}\n`;
+}
+function bumpRework(text) {
+  if (/^rework: \d+$/m.test(text)) return text.replace(/^rework: (\d+)$/m, (m0, n) => `rework: ${Number(n) + 1}`);
+  if (/^deps: .*$/m.test(text)) return text.replace(/^(deps: .*)$/m, `$1\nrework: 1`);
+  return text.replace(/^(updated: .*)$/m, `$1\nrework: 1`);
 }
 
 const cmd = process.argv[2];
@@ -128,23 +151,46 @@ if (cmd === 'validate') {
 if (cmd === 'update') {
   const id = process.argv[4];
   const to = process.argv[5];
+  const reason = arg('reason');
   const cards = loadCards(dir);
   const card = cards.find((c) => c.id === id);
   if (!card) { console.error(`未找到任务卡: ${id}`); process.exit(2); }
-  const r = checkTransition(card, to, cards);
+  const r = checkTransition(card, to, cards, { reason });
   if (!r.ok) { console.error(`拒绝: ${r.reason}`); process.exit(1); }
-  const text = readFileSync(card.file, 'utf8');
+  let newText = readFileSync(card.file, 'utf8');
   const updated = new Date().toISOString().slice(0, 10);
-  const newText = text
+  newText = newText
     .replace(/^status: .*$/m, `status: ${to}`)
     .replace(/^updated: .*$/m, `updated: ${updated}`);
+  // v1.2：打回（done→todo）——原因入批注 + rework 计数
+  if (card.status === 'done' && to === 'todo') {
+    newText = appendReworkNote(newText, String(reason || '').trim());
+    newText = bumpRework(newText);
+  }
   writeFileSync(card.file, newText);
-  console.log(`OK ${id}: ${card.status} -> ${to}`);
+  console.log(`OK ${id}: ${card.status} -> ${to}${r.warning ? '（注意：' + r.warning + '）' : ''}`);
   process.exit(0);
 }
 
 if (cmd === 'create') {
   const title = process.argv[4];
+  const fromRole = arg('from');
+  // v1.2：回程卡受限通道（T3.3）——coder/writer → modeler；字段组合由护栏固定
+  if (fromRole) {
+    if (!['coder', 'writer'].includes(fromRole)) { console.error(`--from 非法: ${fromRole}（仅 coder|writer）`); process.exit(2); }
+    if (arg('owner') || arg('priority') || arg('deps')) { console.error('回程卡通道不接受 --owner/--priority/--deps（由护栏固定为 modeler/P1/无依赖）'); process.exit(2); }
+    if (!title) { console.error('用法: taskcard create <tasksDir> <标题> --from <coder|writer> [--desc <说明>] [--evidence <证据引用>]'); process.exit(2); }
+    const desc0 = arg('desc') || '';
+    const evidence0 = arg('evidence') || '';
+    const cards0 = loadCards(dir);
+    const nums0 = cards0.map((c) => parseInt(c.id.replace(/\D/g, ''), 10) || 0);
+    const id0 = `T-${String((nums0.length ? Math.max(...nums0) : 0) + 1).padStart(3, '0')}`;
+    const today0 = new Date().toISOString().slice(0, 10);
+    const card0 = `---\nid: ${id0}\ntitle: ${title}\nstatus: todo\nowner: modeler\npriority: P1\ncreated: ${today0}\nupdated: ${today0}\ndeps: []\norigin: ${fromRole}\n---\n## 问题描述\n${desc0 || title}\n\n## 证据引用\n${evidence0 || '（待补充）'}\n\n## 进度记录\n\n## 批注\n`;
+    writeFileSync(path.join(dir, `${id0}.md`), card0);
+    console.log(`OK 已创建回程卡 ${id0}（origin=${fromRole} → owner=modeler, P1）`);
+    process.exit(0);
+  }
   const owner = arg('owner') || 'coder';
   const desc = arg('desc') || '';
   const priority = arg('priority') || 'P1';

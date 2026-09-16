@@ -6,10 +6,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
-![Status: v1.0](https://img.shields.io/badge/Status-v1.0-brightgreen.svg)
-![Roadmap: v1.2](https://img.shields.io/badge/Roadmap-v1.2-8A2BE2.svg)
+![Status: v1.2](https://img.shields.io/badge/Status-v1.2-brightgreen.svg)
+![Roadmap: v1.3](https://img.shields.io/badge/Roadmap-v1.3-8A2BE2.svg)
 
-> 状态：v1 已完成全链路内测（三角色 × 三设备）；v1.2 规划中 → [ROADMAP.md](ROADMAP.md)
+> 状态：v1.2 已完成全链路内测（实战修订：调度核心、会话与上下文、跨端通道、独立审计、同步基建、打包环境）→ [ROADMAP.md](ROADMAP.md)
 
 ## 这是什么
 
@@ -31,6 +31,10 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 - **多 API 来源**：官方 API 与中转站多 URL / 多 key，一键切换；内置 `codex-bridge` 让"仅接受标准 Codex 客户端"的通道也能接入。
 - **环境同步**：lockfile + 三方同意 + P2P wheelhouse——接收端离线对齐，uv 自动 diff 只装缺失（不碰镜像源）。
 - **能力层 skills**：每角色专属技能集（dsh 原生 skills 机制，按需加载）；蒸馏整合自社区 MIT 建模 skill 生态（见 `docs/capability-design.md`）。
+- **会话与上下文（v1.2）**：任务自动接取即开新会话（一卡一会话、打回回原会话续做）；上下文压缩三件套（自动压缩 / `/compact` / 溢出恢复）+ token 水位守门。
+- **跨端通道（v1.2）**：notices 消息层（工作区 git 通道，紧急消息 steer 打断）+ 停止指令 + 回程卡（Slave→Modeler 受限建卡）+ 打回机制（done→todo 必填原因）。
+- **独立审计（v1.2）**：面板「审计室」一键对数学模型 / 代码成品 / 最终论文发起第三方专家审计（经本地 codex-bridge），含预算守门（> ¥30 需确认）与桥健康可见。
+- **同步守护看门狗（v1.2）**：同步心跳显性化（面板心跳行 + 停滞告警）；启动器自动确保守护进程在跑。
 - **零注册一键安装**：每成员一个 zip 包，解压双击 `setup.bat` 全自动（Tailscale 上线 → SSH → 便携 Git/Node/uv → 克隆工作区 → 安装 dsh → 生成配置 → 自启 + 快捷方式）。
 
 ## 架构

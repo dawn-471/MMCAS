@@ -31,6 +31,8 @@ window.__ModuleLoader__.load({
       ".mmcas-git .h{color:var(--dsw-alias-state-business-primary,#4da3ff);width:62px;flex:none}",
       ".mmcas-sync{font-size:11px;color:var(--dsw-alias-label-tertiary,#6a7282)}",
       ".mmcas-sync.warn{color:#ffb84d}",
+      ".mmcas-label{font-size:11px;color:var(--dsw-alias-label-tertiary,#6a7282);min-width:62px;flex:none}",
+      ".mmcas-btn-mini{background:transparent;border:1px solid var(--dsw-alias-border,#3a3f4a);border-radius:6px;color:inherit;padding:3px 10px;font-size:12px;cursor:pointer}",
       ".mmcas-input,.mmcas-select,.mmcas-textarea{box-sizing:border-box;width:100%;border:1px solid var(--dsw-alias-border-l3,#2a2f3c);background:var(--dsw-alias-button-elevated-fill,rgba(255,255,255,.03));color:var(--dsw-alias-label-primary,#e8eaf0);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;font-family:inherit}",
       ".mmcas-input:focus,.mmcas-textarea:focus{border-color:var(--dsw-alias-state-business-primary,#4da3ff)}",
       ".mmcas-textarea{min-height:64px;resize:vertical}",
@@ -67,6 +69,9 @@ window.__ModuleLoader__.load({
     var COLS = [["todo", "待办", "#8a94a6"], ["doing", "进行中", "#4da3ff"], ["done", "完成", "#5fd38a"]];
     var ROLE_C = { modeler: "#4da3ff", coder: "#9c6bff", writer: "#5fd38a" };
     var ROLE_I = { modeler: "M", coder: "C", writer: "W" };
+    // 看板/总控/记忆统一 30 秒一刷；刷新的数据源是宿主 /api/refresh —— 它先与 git 远端对齐
+    // （coder、writer 端 push 的卡变更由此进来），再回最新的卡与同步水位
+    var REFRESH_MS = 30000;
     // 数据端点：默认 127.0.0.1:3210；多实例并存时 = web 端口 + 11（3199→3210, 3200→3211）
     var API = "http://127.0.0.1:3210";
     if (typeof window !== "undefined" && window.__MMCAS_API__) {
@@ -91,6 +96,26 @@ window.__ModuleLoader__.load({
         body: body ? JSON.stringify(body) : undefined
       }).then(function (r) { return r.json(); });
     }
+    function fmtTime(iso) {
+      if (!iso) return "—";
+      try { return new Date(iso).toLocaleTimeString(); } catch (e) { return "—"; }
+    }
+    function syncText(sync) {
+      if (!sync) return "同步状态读取中…";
+      var t = "上次同步 " + fmtTime(sync.lastRunAt) + " · " + (sync.note || "");
+      if (sync.running) t += "（正在与远端对齐）";
+      if (sync.behind) t += "（落后 " + sync.behind + "）";
+      else if (sync.ahead) t += "（领先 " + sync.ahead + "）";
+      if (sync.heartbeat) {   // v1.2 T5.3：守护心跳
+        if (sync.heartbeat.alive) t += " · 守护心跳 " + sync.heartbeat.ageSec + "s 前";
+        else t += " · ⚠ 守护心跳停滞" + (sync.heartbeat.ageSec === null || sync.heartbeat.ageSec === undefined ? "（未运行）" : "（" + sync.heartbeat.ageSec + "s）");
+        var hm = sync.heartbeat.mode;
+        if (hm === "conflict") t += " · ⚠ 同步冲突暂停（待人工解决）";
+        else if (hm === "blocked") t += " · ⚠ 入库体检拦截（见 sync 日志）";
+        else if (hm && hm !== "normal") t += " · ⚠ 同步状态: " + hm;
+      }
+      return t;
+    }
 
     // ---------- 视图: 总控 ----------
     function Overview() {
@@ -99,14 +124,20 @@ window.__ModuleLoader__.load({
       var _r = useState(null), roleSel = _r[0], setRoleSel = _r[1];
       var _o = useState(null), out = _o[0], setOut = _o[1];
       var _b = useState(false), busy = _b[0], setBusy = _b[1];
+      var _sn = useState(false), syncing = _sn[0], setSyncing = _sn[1];
 
+      function load() {
+        fetch(API + "/api/state").then(function (r) { return r.json(); }).then(function (s) { setState(s); }).catch(function () {});
+      }
       useEffect(function () {
-        var alive = true;
-        function load() { fetch(API + "/api/state").then(function (r) { return r.json(); }).then(function (s) { if (alive) setState(s); }).catch(function () {}); }
         load();
-        var t = setInterval(load, 15000);
-        return function () { alive = false; clearInterval(t); };
+        var t = setInterval(load, REFRESH_MS); // 总控同样 30 秒一刷（宿主每 30 秒做一次 git 同步）
+        return function () { clearInterval(t); };
       }, []);
+      function syncNow() {
+        setSyncing(true);
+        apiCall("POST", "/api/sync", {}).then(function () { setSyncing(false); load(); }).catch(function () { setSyncing(false); });
+      }
 
       var devs = (state && state.devices) || {};
       var git = (state && state.git) || { log: [], branch: "", ahead: 0, behind: 0 };
@@ -145,6 +176,15 @@ window.__ModuleLoader__.load({
       function setPoller(enabled) {
         apiCall("POST", "/api/poller", { enabled: enabled }).then(function (r) { if (r.ok) setPollerState(r); });
       }
+      function setPollerOpt(opt) {
+        apiCall("POST", "/api/poller", opt).then(function (r) { if (r.ok) loadPoller(); });
+      }
+      var _lt = useState(null), lastTick = _lt[0], setLastTick = _lt[1];
+      useEffect(function () {
+        fetch(API + "/api/poller").then(function (r) { return r.json(); })
+          .then(function (s) { if (s && s.history && s.history.length) setLastTick(s.history[s.history.length - 1]); })
+          .catch(function () {});
+      }, []);
 
       var pollerUi = el(Fragment, null,
         el("div", { className: "mmcas-sec" }, "任务轮询器（自动接取派发）"),
@@ -158,11 +198,80 @@ window.__ModuleLoader__.load({
             onClick: function () { setPoller(false); }
           }, "关闭：能工智人接取")
         ),
+        el("div", { className: "mmcas-row" },
+          el("button", {
+            className: pollerState && pollerState.autoClaim ? "mmcas-btn-primary" : "mmcas-btn-ghost",
+            onClick: function () { setPollerOpt({ autoClaim: true }); }
+          }, "自动接取：开（todo→doing 由轮询器翻牌）"),
+          el("button", {
+            className: pollerState && pollerState.autoClaim === false ? "mmcas-btn-primary" : "mmcas-btn-ghost",
+            onClick: function () { setPollerOpt({ autoClaim: false }); }
+          }, "自动接取：关（只提醒、不翻牌）"),
+          el("button", {
+            className: "mmcas-btn-ghost",
+            onClick: function () { apiCall("POST", "/api/poller/now", {}).then(function (r) { if (r && r.tick) setLastTick(r.tick); loadPoller(); }); }
+          }, "立即轮询一次")
+        ),
         el("div", { className: "mmcas-empty" },
           pollerState && pollerState.enabled
-            ? "轮询中（每 " + (pollerState.intervalSec || 120) + " 秒）· 上次检测 " + (pollerState.lastRun ? new Date(pollerState.lastRun).toLocaleTimeString() : "—") + (pollerState.lastFound && pollerState.lastFound.length ? " · 最近发现: " + pollerState.lastFound.join(",") : "")
+            ? "轮询中（每 " + (pollerState.intervalSec || 120) + " 秒）· 上次检测 " + (pollerState.lastRun ? new Date(pollerState.lastRun).toLocaleTimeString() : "—")
+              + " · 自动接取 " + (pollerState.autoClaim === false ? "关" : "开")
+              + (pollerState.lastFound && pollerState.lastFound.length ? " · 本轮就绪: " + pollerState.lastFound.join(",") : "")
+              + (pollerState.lastBlocked && pollerState.lastBlocked.length ? " · 被 WIP 挡住: " + pollerState.lastBlocked.join(",") : "")
+              + (pollerState.lastTargetSessionId ? " · 派发到会话 " + String(pollerState.lastTargetSessionId).slice(0, 12) : "")
+              + (pollerState.claims && pollerState.claims.length
+                  ? " · 最近自动接取: " + pollerState.claims.map(function (c) { return c.id; }).join(",") : "")
             : "已关闭——agent 仅在能工智人发话时接取任务"
-        )
+        ),
+        lastTick ? el("div", { className: "mmcas-empty" },
+          "本次 tick：" + (lastTick.claimed && lastTick.claimed.length ? "自动接取 " + lastTick.claimed.join(",") + "；" : "")
+            + (lastTick.dispatched && lastTick.dispatched.length ? "已派发 " + lastTick.dispatched.join(",") : "无派发")
+            + (lastTick.note ? "；" + lastTick.note : "")) : null
+      );
+
+      // ---- v1.2：消息区（notices：收发件箱 + ack） ----
+      var _nt = useState(null), notices = _nt[0], setNotices = _nt[1];
+      var _ntf = useState({ to: "coder", kind: "info", urgency: "normal", scope: "", body: "" }), nForm = _ntf[0], setNForm = _ntf[1];
+      var _ntb = useState(false), ntBusy = _ntb[0], setNtBusy = _ntb[1];
+      function loadNotices() {
+        fetch(API + "/api/notices").then(function (r) { return r.json(); }).then(function (s) { setNotices((s && s.items) || []); }).catch(function () {});
+      }
+      useEffect(function () { loadNotices(); var t = setInterval(loadNotices, 10000); return function () { clearInterval(t); }; }, []);
+      function sendNotice() {
+        if (!nForm.body.trim()) return;
+        setNtBusy(true);
+        apiCall("POST", "/api/notices", nForm).then(function (r) { setNtBusy(false); if (r && r.ok) { setNForm({ ...nForm, body: "", scope: "" }); loadNotices(); } }).catch(function () { setNtBusy(false); });
+      }
+      function ackNotice(id) { apiCall("POST", "/api/notices/ack", { id: id }).then(function () { loadNotices(); }); }
+      var KIND_LABEL = { ruling: "裁决请求", error: "错误上报", stop: "停止指令", info: "一般" };
+      var myRoleN = (state && state.role) || "coder";
+      var noticeTargets = myRoleN === "modeler" ? ["coder", "writer", "modeler", "all"] : ["modeler"];
+      var inboxList = (notices || []).filter(function (n) { return n.to === myRoleN || n.to === "all" || n.from === myRoleN; }).slice(0, 12);
+      var noticesUi = el(Fragment, null,
+        el("div", { className: "mmcas-sec" }, "消息（跨端通知 / 停止指令 / 回执）"),
+        el("div", { className: "mmcas-row" },
+          el("select", { className: "mmcas-select", style: { width: "96px", flex: "none" }, value: nForm.to, onChange: function (e) { setNForm({ ...nForm, to: e.target.value }); } },
+            noticeTargets.map(function (x) { return el("option", { value: x, key: x }, x); })),
+          el("select", { className: "mmcas-select", style: { width: "104px", flex: "none" }, value: nForm.kind, onChange: function (e) { setNForm({ ...nForm, kind: e.target.value }); } },
+            Object.keys(KIND_LABEL).map(function (x) { return el("option", { value: x, key: x }, KIND_LABEL[x]); })),
+          el("select", { className: "mmcas-select", style: { width: "110px", flex: "none" }, value: nForm.urgency, onChange: function (e) { setNForm({ ...nForm, urgency: e.target.value }); } },
+            el("option", { value: "normal" }, "普通"),
+            el("option", { value: "urgent" }, "紧急（打断）"))
+        ),
+        el("div", { className: "mmcas-row" },
+          el("input", { className: "mmcas-input", placeholder: "范围（可选：T-115 或 T-115,T-116——停止某方向时用）", value: nForm.scope, onChange: function (e) { setNForm({ ...nForm, scope: e.target.value }); } })
+        ),
+        el("textarea", { className: "mmcas-textarea", placeholder: "正文", value: nForm.body, onChange: function (e) { setNForm({ ...nForm, body: e.target.value }); } }),
+        el("div", { className: "mmcas-row", style: { marginTop: "8px" } },
+          el("button", { className: "mmcas-btn-primary", disabled: ntBusy, onClick: sendNotice }, ntBusy ? "发送中…" : "发送")),
+        inboxList.length ? inboxList.map(function (n) {
+          var mine = n.to === myRoleN || n.to === "all";
+          return el("div", { className: "mmcas-mem", key: n.id },
+            el("span", { style: { fontWeight: 600, color: n.urgency === "urgent" ? "#ff7d6b" : "inherit" } }, "[" + (KIND_LABEL[n.kind] || n.kind) + (n.urgency === "urgent" ? "·紧急" : "") + "] "),
+            n.from + " → " + n.to + " · " + n.status + " · " + (n.body || "").slice(0, 110),
+            mine && n.status !== "acked" ? el("button", { className: "mmcas-btn-ghost", style: { marginLeft: "8px", padding: "2px 8px" }, onClick: function () { ackNotice(n.id); } }, "回执") : null
+          );
+        }) : el("div", { className: "mmcas-empty" }, "（暂无消息）")
       );
 
       // ---- 环境同步（方案 B）----
@@ -253,9 +362,21 @@ window.__ModuleLoader__.load({
         el("div", { className: "mmcas-sec" }, "成员设备"),
         el("div", { className: "mmcas-chips" }, devChips),
         pollerUi,
+        noticesUi,
         syncUi,
         controlPortal,
+        el("div", { className: "mmcas-sec" }, "上下文水位"),
+        ((state && state.tokens) || []).length
+          ? ((state && state.tokens) || []).map(function (t) {
+              var warn = t.total > 700000;
+              return el("div", { className: "mmcas-sync " + (warn ? "warn" : ""), key: t.id }, (t.title || String(t.id).slice(0, 12)) + " · ~" + Math.round((t.total || 0) / 1000) + "K token" + (warn ? " ← 接近上限，先落盘交接（卡批注 + memory）再继续或换会话" : ""));
+            })
+          : el("div", { className: "mmcas-empty" }, "（暂无水位数据）"),
         el("div", { className: "mmcas-sec" }, "同步水位"),
+        el("div", { className: "mmcas-row" },
+          el("button", { className: "mmcas-btn-ghost", onClick: syncNow, disabled: syncing }, syncing ? "同步中…" : "立即同步"),
+          el("span", { className: "mmcas-sync " + (state && state.sync && state.sync.ok === false ? "warn" : "") }, syncText(state && state.sync))
+        ),
         el("div", { className: "mmcas-sync " + (git.ahead || git.behind ? "warn" : "") }, git.branch + " · " + syncTxt),
         (git.log || []).map(function (l, i) {
           var p = l.split("|");
@@ -281,14 +402,33 @@ window.__ModuleLoader__.load({
       var _e = useState(""), err = _e[0], setErr = _e[1];
       var _f = useState("all"), filter = _f[0], setFilter = _f[1];
       var _r = useState("modeler"), myRole = _r[0], setMyRole = _r[1];
+      var _wl = useState(0), wipLimit = _wl[0], setWipLimit = _wl[1];
       var _ed = useState(false), editing = _ed[0], setEditing = _ed[1];
       var _ef = useState({ title: "", owner: "coder", priority: "P1", deps: "", desc: "" }), form = _ef[0], setForm = _ef[1];
+      var _sy = useState(null), sync = _sy[0], setSync = _sy[1];
+      var _syb = useState(false), syncing = _syb[0], setSyncing = _syb[1];
 
-      function load() { apiCall("GET", "/api/tasks").then(function (r) { setSt(r); setErr(""); }).catch(function (e) { setErr(String(e)); }); }
+      // 刷新 = 宿主先与 git 远端对齐（coder/writer 端的卡变更由此进入本端），再回最新卡
+      function load(force, isRetry) {
+        if (force) setSyncing(true);
+        return apiCall("GET", "/api/refresh" + (force ? "?force=1" : "")).then(function (r) {
+          if (!r || !r.cards) throw new Error((r && r.error) || "空响应");
+          setSt({ cards: r.cards });
+          if (r.sync) setSync(r.sync);
+          setErr("");
+          // 宿主正在后台与 git 对齐：2 秒后补取一次，让卡面尽快跟上（只补一次，不成环）
+          if (r.sync && r.sync.running && !isRetry) setTimeout(function () { load(false, true); }, 2000);
+        }).catch(function () {
+          // 宿主尚未更新时退回只读端点：至少卡片仍能刷新，只是不带 git 同步
+          return apiCall("GET", "/api/tasks").then(function (r2) {
+            if (r2 && r2.cards) { setSt(r2); setErr(""); }
+          }).catch(function (e) { setErr("刷新失败: " + e); });
+        }).then(function () { setSyncing(false); }, function () { setSyncing(false); });
+      }
       useEffect(function () {
-        load();
-        fetch(API + "/api/state").then(function (r) { return r.json(); }).then(function (s) { if (s && s.role) setMyRole(s.role); }).catch(function () {});
-        var t = setInterval(load, 10000);
+        load(false);
+        fetch(API + "/api/state").then(function (r) { return r.json(); }).then(function (s) { if (s && s.role) setMyRole(s.role); if (s && typeof s.wipLimit === "number") setWipLimit(s.wipLimit); }).catch(function () {});
+        var t = setInterval(function () { load(false); }, REFRESH_MS);
         return function () { clearInterval(t); };
       }, []);
 
@@ -325,7 +465,9 @@ window.__ModuleLoader__.load({
         var pa = (a.priority || "P1").slice(1), pb = (b.priority || "P1").slice(1);
         return pa === pb ? String(a.id).localeCompare(String(b.id)) : pa - pb;
       });
-      var visible = filter === "mine" ? cards.filter(function (c) { return c.owner === myRole; }) : cards;
+      var visible = filter === "mine" ? cards.filter(function (c) { return c.owner === myRole; })
+        : filter === "inbox" ? cards.filter(function (c) { return c.origin && c.status === "todo"; })
+        : cards;
       var detailCard = detail ? cards.find(function (c) { return c.id === detail; }) : null;
       var pendingDeps = detailCard ? depsPending(detailCard, cards) : [];
       var canAct = detailCard ? (myRole === "modeler" || detailCard.owner === myRole) : false;
@@ -359,14 +501,18 @@ window.__ModuleLoader__.load({
           myRole === "modeler" ? el("button", { className: "mmcas-btn-primary", onClick: function () { setCreating(!creating); setDetail(null); } }, creating ? "收起表单" : "新建任务") : null,
           el("button", { className: filter === "all" ? "mmcas-btn-primary" : "mmcas-btn-ghost", onClick: function () { setFilter("all"); } }, "全部"),
           el("button", { className: filter === "mine" ? "mmcas-btn-primary" : "mmcas-btn-ghost", onClick: function () { setFilter("mine"); } }, "我的任务"),
-          el("button", { className: "mmcas-btn-ghost", onClick: load }, "刷新"),
+          myRole === "modeler" ? el("button", { className: filter === "inbox" ? "mmcas-btn-primary" : "mmcas-btn-ghost", onClick: function () { setFilter("inbox"); } }, "收件箱") : null,
+          myRole === "modeler" ? null : el("button", { className: "mmcas-btn-ghost", onClick: function () { var t = window.prompt("问题卡标题（简述要裁决或上报的问题）:", ""); if (!t || !t.trim()) return; var d = window.prompt("问题描述（上下文/证据）:", ""); apiCall("POST", "/api/backcard", { title: t.trim(), desc: (d || "").trim() }).then(function (r) { if (r && r.ok) { window.alert("已提交回程卡 " + r.id); load(); } else setErr((r && r.error) || "提交失败"); }); } }, "提交问题卡"),
+          el("button", { className: "mmcas-btn-ghost", onClick: function () { load(true); }, title: "立即拉取 git 远端（coder/writer 的卡变更）并刷新看板" }, syncing ? "同步中…" : "刷新"),
           el("span", { className: "mmcas-sync", style: { marginLeft: "auto", fontSize: "11px", whiteSpace: "nowrap" } },
             ["modeler", "coder", "writer"].map(function (r) {
               var n = (st.cards || []).filter(function (c) { return c.status === "doing" && c.owner === r; }).length;
-              return r.slice(0, 1).toUpperCase() + " " + n + "/2";
+              return r.slice(0, 1).toUpperCase() + " " + n + (wipLimit > 0 ? "/" + wipLimit : "");
             }).join("  "))
         ),
         err ? el("div", { className: "mmcas-empty" }, err) : null,
+        el("div", { className: "mmcas-sync " + (sync && sync.ok === false ? "warn" : ""), style: { margin: "2px 0 8px" } },
+          "看板每 " + Math.round(REFRESH_MS / 1000) + " 秒自动同步 git · " + syncText(sync)),
         creating ? el("div", { className: "mmcas-detail" },
           el("h4", null, "新建任务"),
           el("div", { className: "mmcas-row" },
@@ -418,12 +564,106 @@ window.__ModuleLoader__.load({
             canAct && detailCard.status === "todo" && pendingDeps.length === 0 ? el("button", { className: "mmcas-btn-primary", onClick: function () { act(detailCard.id, { status: "doing" }); } }, "开始") : null,
             canAct && detailCard.status === "doing" ? el("button", { className: "mmcas-btn-primary", onClick: function () { act(detailCard.id, { status: "done" }); } }, "完成") : null,
             canAct && detailCard.status === "doing" ? el("button", { className: "mmcas-btn-ghost", onClick: function () { act(detailCard.id, { status: "todo" }); } }, "退回待办") : null,
-            canAct && detailCard.status === "done" ? el("button", { className: "mmcas-btn-ghost", onClick: function () { act(detailCard.id, { status: "doing" }); } }, "打回进行中") : null,
+            canAct && detailCard.status === "done" ? el("button", { className: "mmcas-btn-ghost", onClick: function () { var rr = window.prompt("打回原因（必填）:", ""); if (rr && rr.trim()) { apiCall("PUT", "/api/tasks", { id: detailCard.id, status: "todo", reason: rr.trim() }).then(function (r) { if (r && r.ok) { if (r.warning) window.alert(r.warning); load(); setDetail(null); } else setErr((r && r.error) || "打回失败"); }); } } }, "打回（需填原因）") : null,
+            myRole === "modeler" && detailCard.origin && detailCard.status === "todo" ? el("button", { className: "mmcas-btn-primary", onClick: function () { var t = window.prompt("正式卡标题（默认沿用原题）:", detailCard.title || ""); if (!t || !t.trim()) return; apiCall("POST", "/api/tasks", { title: t.trim(), owner: "coder", priority: "P1", deps: [], desc: "由回程卡 " + detailCard.id + " 转入。\n\n" + (detailCard.body || "").slice(0, 300) }).then(function (r) { if (r && r.ok) { apiCall("PUT", "/api/tasks", { id: detailCard.id, status: "done" }).then(function () { load(); setDetail(null); }); } else setErr((r && r.error) || "转卡失败"); }); } }, "转正式卡") : null,
+            myRole === "modeler" && detailCard.status !== "done" ? el("button", { className: "mmcas-btn-danger", onClick: function () { var why = window.prompt("停止该方向（向 " + detailCard.owner + " 端发送紧急 stop，scope=" + detailCard.id + "）。原因/说明（可选）:", ""); if (why === null) return; apiCall("POST", "/api/notices", { to: detailCard.owner, kind: "stop", urgency: "urgent", scope: detailCard.id, body: (why || "").trim() || ("停止 " + detailCard.id + " 方向的后续工作") }).then(function (r) { if (r && r.ok) { window.alert("已发送停止指令 " + r.id); } else setErr((r && r.error) || "发送失败"); }); } }, "停止该方向") : null,
             canAct && !editing ? el("button", { className: "mmcas-btn-ghost", onClick: function () { setForm({ title: detailCard.title || "", owner: detailCard.owner || "coder", priority: detailCard.priority || "P1", deps: depsOf(detailCard).join(","), desc: (detailCard.body || "").split("## 产出物")[0].replace("## 目标", "").trim() }); setEditing(true); } }, "编辑") : null,
             canAct ? el("button", { className: "mmcas-btn-danger", onClick: function () { del(detailCard.id); } }, "删除") : null,
             el("button", { className: "mmcas-btn-ghost", onClick: function () { setDetail(null); setEditing(false); } }, "关闭")
           )
         ) : null
+      );
+    }
+
+    // ---------- 视图: 审计室（v1.2 W4） ----------
+    function AuditRoom() {
+      var _d = useState("model"), dim = _d[0], setDim = _d[1];
+      var _s = useState(null), st = _s[0], setSt = _s[1];
+      var _h = useState(null), bh = _h[0], setBh = _h[1];
+      var _cf = useState(null), cfg = _cf[0], setCfg = _cf[1];
+      var _sc = useState(false), showCfg = _sc[0], setShowCfg = _sc[1];
+      var _ed = useState(null), edit = _ed[0], setEdit = _ed[1];
+      var _b = useState(false), busy = _b[0], setBusy = _b[1];
+      var _m = useState(""), msg = _m[0], setMsg = _m[1];
+      var _nt = useState(""), note = _nt[0], setNote = _nt[1];
+      function loadStatus() {
+        fetch(API + "/api/audit/status").then(function (r) { return r.json(); }).then(function (s) { setSt(s); }).catch(function () {});
+        fetch(API + "/api/bridge/health").then(function (r) { return r.json(); }).then(function (b) { setBh(b); }).catch(function () {});
+        fetch(API + "/api/audit/config").then(function (r) { return r.json(); }).then(function (c) { setCfg(c); }).catch(function () {});
+      }
+      useEffect(function () { loadStatus(); var t = setInterval(loadStatus, 5000); return function () { clearInterval(t); }; }, []);
+      // cfg 到货后自动填充编辑表单（首次）
+      useEffect(function () {
+        if (cfg && cfg.ok && !edit) setEdit({ endpoint: cfg.endpoint, model: cfg.model, protocol: cfg.protocol, maxFeeCny: cfg.maxFeeCny, apiKeyEnv: cfg.apiKeyEnv, apiKey: "" });
+      }, [cfg]);
+      function saveCfg() {
+        var e = edit || {};
+        apiCall("PUT", "/api/audit/config", { endpoint: e.endpoint, model: e.model, protocol: e.protocol, maxFeeCny: e.maxFeeCny, apiKey: e.apiKey || undefined, apiKeyEnv: e.apiKeyEnv }).then(function (r) {
+          if (r && r.ok) { setMsg("Reviewer 配置已保存（填写了 key 则已写入 credentials）"); setEdit(null); setShowCfg(false); loadStatus(); }
+          else setMsg((r && r.error) || "配置保存失败");
+        }).catch(function (x) { setMsg(String(x)); });
+      }
+      function start(confirm) {
+        setBusy(true); setMsg("");
+        apiCall("POST", "/api/audit", { dimension: dim, confirm: !!confirm, note: note }).then(function (r) {
+          setBusy(false);
+          if (r && r.ok && r.started) { setMsg("审阅已启动：" + r.id + "（约 2–5 分钟，可关闭本抽屉）"); loadStatus(); }
+          else if (r && r.needsConfirm) {
+            if (window.confirm("预估费用 ≈ ¥" + r.est.estFee + "（" + r.est.files + " 文件 / " + Number(r.est.chars).toLocaleString() + " 字符）——超过阈值。继续？")) start(true);
+          } else setMsg((r && r.error) || "启动失败");
+        }).catch(function (e) { setBusy(false); setMsg(String(e)); });
+      }
+      var running = st && st.running;
+      var res = st && st.result;
+      return el(Fragment, null,
+        el("div", { className: "mmcas-row" },
+          el("div", { className: "mmcas-sec", style: { flex: 1, marginBottom: 0 } }, "Reviewer（审阅人）· 第四方审阅实例"),
+          el("button", { className: "mmcas-btn-mini", onClick: function () { setShowCfg(!showCfg); } }, showCfg ? "收起配置" : "配置 ▾")
+        ),
+        el("div", { className: "mmcas-empty" }, cfg && cfg.ok
+          ? ("通道：" + cfg.model + " @ " + cfg.endpoint + "（" + cfg.protocol + "）· key " + (cfg.hasKey ? "已配置" : "未配置") + " · 阈值 ¥" + cfg.maxFeeCny + " · 源:" + cfg.source)
+          : (cfg ? ("配置读取失败：" + (cfg.error || "未知")) : "配置读取中…")),
+        showCfg && edit ? el("div", { className: "mmcas-mem" },
+          el("div", { className: "mmcas-row" }, el("span", { className: "mmcas-label" }, "Endpoint"), el("input", { className: "mmcas-input", value: edit.endpoint || "", onChange: function (ev) { setEdit(Object.assign({}, edit, { endpoint: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" }, el("span", { className: "mmcas-label" }, "模型名"), el("input", { className: "mmcas-input", value: edit.model || "", onChange: function (ev) { setEdit(Object.assign({}, edit, { model: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" },
+            el("span", { className: "mmcas-label" }, "协议"), el("select", { className: "mmcas-select", style: { width: "130px", flex: "none" }, value: edit.protocol || "responses", onChange: function (ev) { setEdit(Object.assign({}, edit, { protocol: ev.target.value })); } },
+              el("option", { value: "responses" }, "responses"), el("option", { value: "chat" }, "chat/completions")),
+            el("span", { className: "mmcas-label" }, "阈值¥"), el("input", { className: "mmcas-input", style: { width: "70px", flex: "none" }, value: edit.maxFeeCny || 30, onChange: function (ev) { setEdit(Object.assign({}, edit, { maxFeeCny: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" }, el("span", { className: "mmcas-label" }, "API Key"), el("input", { className: "mmcas-input", type: "password", placeholder: "填写后写入 credentials（不回显）", value: edit.apiKey || "", onChange: function (ev) { setEdit(Object.assign({}, edit, { apiKey: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" },
+            el("button", { className: "mmcas-btn-primary", onClick: saveCfg }, "保存配置"),
+            el("button", { className: "mmcas-btn-mini", onClick: function () { setEdit({ endpoint: cfg.endpoint, model: cfg.model, protocol: cfg.protocol, maxFeeCny: cfg.maxFeeCny, apiKeyEnv: cfg.apiKeyEnv, apiKey: "" }); } }, "重置表单")),
+          el("div", { className: "mmcas-empty" }, "写入 dsh settings.yaml 的 reviewer 段（key 存 .credentials.yaml）。默认通道为本地桥（3220）；换别家专家模型：改 endpoint + model（+key）即可。")
+        ) : null,
+        el("div", { className: "mmcas-sec" }, "发起审阅"),
+        el("div", { className: "mmcas-row" },
+          el("select", { className: "mmcas-select", style: { width: "150px", flex: "none" }, value: dim, onChange: function (e) { setDim(e.target.value); } },
+            el("option", { value: "model" }, "数学模型"),
+            el("option", { value: "code" }, "代码成品"),
+            el("option", { value: "paper" }, "最终论文")),
+          el("button", { className: "mmcas-btn-primary", disabled: busy || running, onClick: function () { start(false); } }, running ? "审阅中…" : "开始审阅")
+        ),
+        el("div", { className: "mmcas-row" },
+          el("textarea", { className: "mmcas-input", style: { minHeight: "44px" }, placeholder: "补充说明（可选，随材料一起提交：本轮审阅重点 / 跨文件提醒）", value: note, onChange: function (ev) { setNote(ev.target.value); } })
+        ),
+        msg ? el("div", { className: "mmcas-empty" }, msg) : null,
+        running ? el("div", { className: "mmcas-sync" }, "运行中：" + st.dimension + " · 启动于 " + st.startedAt) : null,
+        res ? el("div", { className: "mmcas-mem" },
+          res.ok
+            ? ("✓ " + res.dimension + " 审阅完成 · " + res.elapsedS + "s · ≈¥" + res.estFee + (res.usage ? (" · in=" + (res.usage.input_tokens || "?") + " out=" + (res.usage.output_tokens || "?")) : ""))
+            : ("✗ " + (res.error || "失败")),
+          res.ok && res.reportPath ? el("div", { className: "r" }, String(res.reportPath)) : null,
+          res.ok && res.notice ? el("div", { className: "r" }, "通知已发送: " + res.notice) : null
+        ) : null,
+        bh ? el("div", { className: "mmcas-empty" + ((bh.ok && bh.bridge && !bh.bridge.lastUpstreamError) ? "" : " warn") },
+          bh.ok
+            ? ("桥：在线 · " + ((bh.bridge.models || []).join("/")) +
+              (bh.bridge.lastUpstreamError
+                ? (" · ⚠ 最近上游错误 " + (bh.bridge.lastUpstreamError.status || "?") + "（" + String(bh.bridge.lastUpstreamError.at || "").slice(0, 19) + "）")
+                : (bh.bridge.lastSuccessAt ? (" · 最近成功 " + String(bh.bridge.lastSuccessAt).slice(0, 19)) : " · 尚无调用记录")))
+            : ("桥：✗ " + (bh.error || "不可达") + "（默认通道将失败；检查 3220 或改配置走外部端点）")) : null,
+        el("div", { className: "mmcas-empty" }, "报告落盘于工作区 audit/ 目录。")
       );
     }
 
@@ -434,7 +674,7 @@ window.__ModuleLoader__.load({
         var alive = true;
         function load() { fetch(API + "/api/state").then(function (r) { return r.json(); }).then(function (s) { if (alive) setState(s); }).catch(function () {}); }
         load();
-        var t = setInterval(load, 15000);
+        var t = setInterval(load, REFRESH_MS);
         return function () { alive = false; clearInterval(t); };
       }, []);
       var mems = (state && state.memory) || [];
@@ -453,9 +693,10 @@ window.__ModuleLoader__.load({
 
     // ---------- 抽屉壳 ----------
     function Drawer(props) {
-      var title = props.panel === "overview" ? "总控" : props.panel === "board" ? "任务看板" : "共享记忆";
+      var title = props.panel === "overview" ? "总控" : props.panel === "board" ? "任务看板" : props.panel === "audit" ? "审阅室" : "共享记忆";
       var body = props.panel === "overview" ? el(Overview)
         : props.panel === "board" ? el(Board)
+        : props.panel === "audit" ? el(AuditRoom)
         : el(Memory);
       return el(Fragment, null,
         el("div", { className: "mmcas-mask", onClick: props.onClose }),
@@ -493,6 +734,9 @@ window.__ModuleLoader__.load({
       if (kind === "memory") return el(Fragment, null,
         el("circle", { cx: "12", cy: "12", r: "9" }),
         el("path", { d: "M12 7v5l3 2" }));
+      if (kind === "audit") return el(Fragment, null,
+        el("path", { d: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" }),
+        el("path", { d: "M9 12l2 2 4-4" }));
       return el(Fragment, null,
         el("rect", { x: "4", y: "5", width: "16", height: "10", rx: "2" }),
         el("path", { d: "M8 19h8M12 15v4" }));
@@ -536,8 +780,8 @@ window.__ModuleLoader__.load({
         });
       };
 
-      // 角色感知：全员三按钮；总控抽屉内按角色分级（操控门户仅 Master）
-      var buttons = [btn("overview", "总控"), btn("board", "任务看板"), btn("memory", "共享记忆")];
+      // 角色感知：全员四按钮（总控/看板/记忆/审阅室）；总控抽屉内按角色分级（操控门户仅 Master）
+      var buttons = [btn("overview", "总控"), btn("board", "任务看板"), btn("memory", "共享记忆"), btn("audit", "审阅室")];
 
       return el(Fragment, null,
         el("div", { className: "mmcas-wrap", "data-mmcas-btns": "1" }, buttons),

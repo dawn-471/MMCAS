@@ -131,6 +131,14 @@ function setBlockInSection(text, sectionName, key, blockLines) {
 // ---------- 模型目录（dsh catalog） ----------
 // dsh 的 settings `llm-deepseek.models` 会整体替换内置默认目录，故由 providers.yaml 的
 // models 生成完整 catalog；已知官方模型补元数据（否则会丢失图片能力等声明）。
+// v1.2 T6.1：出厂默认声明图片输入能力（消灭"想看图被本地门禁拒"——回收分析 read_image 546 次）；
+// 参数化：--image-pixel-budget / --image-max-bytes / 环境变量 MMCAS_IMAGE_*；--no-image 关闭默认。
+function visionDefaults() {
+  if (process.argv.includes('--no-image')) return null;
+  const px = parseInt(arg('image-pixel-budget', process.env.MMCAS_IMAGE_PIXEL_BUDGET || '640000'), 10) || 640000;
+  const mb = parseInt(arg('image-max-bytes', process.env.MMCAS_IMAGE_MAX_BYTES || '1048576'), 10) || 1048576;
+  return { inputModalities: ['text', 'image'], imagePixelBudget: px, imageMaxBytes: mb };
+}
 const KNOWN_MODEL_META = {
   'deepseek-v4-flash': { name: 'DeepSeek-V4-Flash' },
   'deepseek-v4-pro': { name: 'DeepSeek-V4-Pro' },
@@ -152,9 +160,11 @@ function yamlQuote(v) {
 
 // 生成 llm-deepseek 段内的 models 块（首行缩进 2）
 function buildCatalogLines(models) {
+  const vd = visionDefaults();
   const out = ['  models:'];
   for (const id of models) {
-    const meta = KNOWN_MODEL_META[id] || {};
+    // v1.2 T6.1：默认图片能力，已知元数据可覆盖/补充
+    const meta = { ...(vd || {}), ...(KNOWN_MODEL_META[id] || {}) };
     out.push(`    - id: ${id}`);
     if (meta.name) out.push(`      name: ${yamlQuote(meta.name)}`);
     if (meta.description) out.push(`      description: ${yamlQuote(meta.description)}`);
@@ -200,6 +210,9 @@ if (cmd === 'switch') {
   const settingsPath = arg('settings', path.join(os.homedir(), '.dsh', 'settings.yaml'));
   const credPath = arg('credentials', path.join(os.homedir(), '.dsh', '.credentials.yaml'));
   const dryRun = process.argv.includes('--dry-run');
+  // v1.2 T6.1：reasoningEffort 按角色默认（coder=max / writer=high / modeler=high），可 --effort 覆盖
+  const roleArg = arg('role', process.env.MMCAS_ROLE || '');
+  const effort = arg('effort', ({ coder: 'max', writer: 'high', modeler: 'high' })[roleArg] || 'high');
 
   const settingsText = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : '';
   const credText = existsSync(credPath) ? readFileSync(credPath, 'utf8') : 'version: 1\nrefs:\n';
@@ -212,14 +225,14 @@ if (cmd === 'switch') {
   if (hasDeepseekSection) {
     newSettings = setKeyInSection(settingsText, 'llm-deepseek', 'baseURL', p.base_url);
     newSettings = setKeyInSection(newSettings, 'llm-deepseek', 'apiKeyEnv', 'MMCAS_PROVIDER_KEY');
-    newSettings = setKeyInSection(newSettings, 'llm-deepseek', 'reasoningEffort', 'high');
+    newSettings = setKeyInSection(newSettings, 'llm-deepseek', 'reasoningEffort', effort);
     if (catalogLines) newSettings = setBlockInSection(newSettings, 'llm-deepseek', 'models', catalogLines);
   } else {
     newSettings = setYamlSection(settingsText, 'llm-deepseek', [
       `llm-deepseek:`,
       `  baseURL: ${p.base_url}`,
       `  apiKeyEnv: MMCAS_PROVIDER_KEY`,
-      `  reasoningEffort: high`,
+      `  reasoningEffort: ${effort}`,
       ...(catalogLines || []),
     ]);
   }
