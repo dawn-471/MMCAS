@@ -1,6 +1,7 @@
 /**
  * @mmcas/dsh-panel —— host 侧 v2
- * 回环 HTTP 数据/操作端点（127.0.0.1:3210，仅本机）:
+ * 回环 HTTP 数据/操作端点（127.0.0.1，仅本机；端口可配 config.port，默认 3210；
+ * 桌面端约定 19398 = web 端口 + 11，随 profile patch 的 mmcas-panel.port 配置）:
  *   GET  /api/state   面板状态（任务卡/设备/记忆/git/同步水位）
  *   GET  /api/tasks   任务卡列表
  *   POST /api/tasks   新建任务 {title, owner, desc}

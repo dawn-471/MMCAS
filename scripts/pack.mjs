@@ -59,6 +59,7 @@ mkdirSync(path.join(PKG, 'core', 'ssh'), { recursive: true });
 mkdirSync(path.join(PKG, 'core', 'codex-bridge'), { recursive: true });
 cpSync(path.join(ROOT, 'packages', 'core', 'sync', 'sync-daemon.mjs'), path.join(PKG, 'core', 'sync', 'sync-daemon.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'write-config.mjs'), path.join(PKG, 'core', 'write-config.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'standard-preset-020.yml'), path.join(PKG, 'core', 'standard-preset-020.yml'));
 cpSync(path.join(ROOT, 'packages', 'core', 'register-workspace.mjs'), path.join(PKG, 'core', 'register-workspace.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'switch-provider.mjs'), path.join(PKG, 'core', 'switch-provider.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'panel', 'panel.mjs'), path.join(PKG, 'core', 'panel', 'panel.mjs'));

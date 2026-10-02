@@ -72,13 +72,15 @@ window.__ModuleLoader__.load({
     // 看板/总控/记忆统一 30 秒一刷；刷新的数据源是宿主 /api/refresh —— 它先与 git 远端对齐
     // （coder、writer 端 push 的卡变更由此进来），再回最新的卡与同步水位
     var REFRESH_MS = 30000;
-    // 数据端点：默认 127.0.0.1:3210；多实例并存时 = web 端口 + 11（3199→3210, 3200→3211）
+    // 数据端点（0.2.0 双端适配）：window.__MMCAS_API__ 最高优先；端口约定 = web 端口 + 11
+    // （3199→3210、3200→3211；桌面端 19387→19398，须在 profile patch 把 mmcas-panel.port 配成同值）；
+    // 例外：队友端默认端口 3080 无约定 → 3210。
     var API = "http://127.0.0.1:3210";
     if (typeof window !== "undefined" && window.__MMCAS_API__) {
       API = window.__MMCAS_API__;
-    } else if (typeof location !== "undefined" && location.port && (location.port === "3199" || location.port === "3200")) {
-      // 仅已知多实例端口重算：3199(Master)→3210, 3200(Slave demo)→3211；其余（队友端默认 3080）一律 3210
-      API = "http://127.0.0.1:" + (parseInt(location.port, 10) + 11);
+    } else if (typeof location !== "undefined" && location.port) {
+      var _p = parseInt(location.port, 10);
+      if (location.port !== "3080" && _p >= 1024 && _p + 11 <= 65535) API = "http://127.0.0.1:" + (_p + 11);
     }
 
     function el(type, props) {

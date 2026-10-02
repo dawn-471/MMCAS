@@ -45,7 +45,14 @@ if (existsSync(akFile)) {
   console.log('[mmcas] 已写入预配 API key');
 }
 
-// 3. dsh web profile persona 注入（实测：profile 级 patch 覆盖 web-app 默认人格）
+// 3. dsh web profile patch 生成（dsh 0.2.0 适配版）
+//    - 0.2.0 起 agent 平面（工具/人格/压缩/委派）由 agent preset 提供，web 会话默认挂
+//      standard 预设。本段用同 id 覆盖 preset-standard：persona 前缀 = Role 文档，其余
+//      插件列表与官方一致（基线 = dsh 0.2.0-rc.2 的 presets/standard.patch.yml，
+//      模板块见 pkg/core/standard-preset-020.yml；compaction 参数沿用 v1.2 档 0.7/8192）。
+//    - system-prompt 用 0.1.5+ 字段 personaPrefix/personaSuffix（Role 留一份，供无 preset 面兜底）。
+//    - 旧的逐条 host 层启用行（subagent/skill/工具/压缩）与 tool-str-replace-editor 行已删除：
+//      前者 0.2.0 起由 preset 接管，后者 0.2.0 起并入 tool-fs（read/write/edit 套件）。
 const roleFile = path.join(BASE, 'pkg', 'core', 'role.md');
 if (existsSync(roleFile)) {
   const roleText = readFileSync(roleFile, 'utf8').trim()
@@ -53,33 +60,19 @@ if (existsSync(roleFile)) {
     .split('{CORE}').join(path.join(BASE, 'pkg', 'core').replace(/\\/g, '/'));
   const webProfile = path.join(DSH_HOME, 'profiles', 'web');
   mkdirSync(webProfile, { recursive: true });
-  const patch = '- id: system-prompt\n  config:\n    persona: |\n' +
-    roleText.split('\n').map((l) => '      ' + l).join('\n') + '\n' +
-    '# 启用 dsh 原生 subagent（三端一致）\n' +
-    '- id: subagent\n  disabled: false\n' +
-    '- id: subagent-spawn-in-process\n  disabled: false\n' +
-    '- id: subagent-fork-in-process\n  disabled: false\n' +
-    '- id: tool-subagent-control\n  disabled: false\n' +
-    '- id: tool-subagent-list-agents\n  disabled: false\n' +
-    '- id: tool-subagent\n  disabled: false\n' +
-    '# 启用 dsh 原生 skills（dsh-web-app 默认禁用；角色 skills 由 setup 拷入 <DSH_HOME>/skills/）\n' +
-    '- id: skill-filesystem\n  disabled: false\n' +
-    '- id: tool-skill\n  disabled: false\n' +
-    '# 启用核心工具（dsh-web-app 默认全部 disabled——不启用则 agent 无命令执行/文件读写能力）\n' +
-    '- id: tool-pwsh\n  disabled: false\n' +
-    '- id: tool-fs\n  disabled: false\n' +
-    '- id: tool-fs-search\n  disabled: false\n' +
-    '- id: tool-jobs\n  disabled: false\n' +
-    '- id: tool-str-replace-editor\n  disabled: false\n' +
-    '# 禁用 dsh 模式切换（agent preset）——MMCAS 只保留单一 persona，杜绝 standard 预设顶掉 Role 文档\n' +
-    '- id: agent-presets\n  disabled: true\n' +
+  const indent = (text, n) => text.split('\n').map((l) => (l ? ' '.repeat(n) + l : '')).join('\n');
+  const presetTpl = readFileSync(path.join(BASE, 'pkg', 'core', 'standard-preset-020.yml'), 'utf8').trimEnd();
+  const presetPluginsYaml = presetTpl.split('__ROLE_LINES__').join(indent(roleText, 12));
+  const patch = '# MMCAS web profile patch —— dsh 0.2.0 适配版（由 write-config.mjs 生成）\n' +
+    '- id: system-prompt\n  config:\n    personaPrefix: |\n' + indent(roleText, 6) + '\n' +
+    "    personaSuffix: 'Your working directory is {{cwd}}.'\n" +
+    '# MMCAS 单一人格：不提供模式/默认预设切换入口\n' +
     '- id: ui-agent-preset\n  disabled: true\n' +
-    '# 启用压缩三件套（v1.2：dsh-web-app 默认禁用；presets 禁用后需显式重挂，否则长任务无压缩）\n' +
-    '- id: compaction-basic\n  disabled: false\n  config:\n    thresholdRatio: 0.7\n    retainTokens: 8192\n' +
-    '- id: command-compact\n  disabled: false\n' +
-    '- id: tool-result-pruner\n  disabled: false\n  config:\n    thresholdChars: 8192\n    headChars: 4096\n    tailChars: 1024\n';
+    '# 覆盖 standard 预设：persona 前缀 = Role 文档（其余与官方一致）\n' +
+    "- id: preset-standard\n  name: '@deepseek-ai/dsh-agent-preset'\n  config:\n    id: standard\n    order: 1\n    plugins:\n" +
+    presetPluginsYaml + '\n';
   writeFileSync(path.join(webProfile, 'cordis.patch.yml'), patch);
-  console.log('[mmcas] dsh web persona 已注入');
+  console.log('[mmcas] dsh web 配置已生成（0.2.0 preset 适配版）');
 }
 
 // 5. 注册 dsh workspace（依托 dsh 原生 workspace 模块，指向共享工作区仓）

@@ -138,7 +138,7 @@ if not defined REPO (
 :: ---------- 7. dsh（版本锁定，避免上游漂移）+ codex CLI（PackyAPI 通道） ----------
 echo [7/9] 安装 Agent 运行环境（dsh + codex）...
 call npm config set registry https://registry.npmmirror.com >nul 2>&1
-call npm install -g @deepseek-ai/dsh@0.1.2-rc.1 >nul 2>&1
+call npm install -g @deepseek-ai/dsh@0.2.0-rc.2 >nul 2>&1
 call dsh --version >nul 2>&1
 if errorlevel 1 (set "FAILED=!FAILED! [7]dsh安装") else (echo   dsh OK)
 :: codex CLI：PackyAPI Codex 通道必需（体积约 380MB，首次安装需数分钟）
