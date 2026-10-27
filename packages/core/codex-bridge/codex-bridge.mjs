@@ -18,6 +18,7 @@
  *     （v2.4：重试阶梯两级 + 拦截警示前缀；指南明示「内层 read-only/never 与本协议无关」以消除"配置不一致"叙事；codex 侧非 message 事件进诊断日志；历史净化——疑似编造的过往回复在 prompt 视图替换为警示，打断自我强化循环）
  *     （v2.5：据 codex rollout 实证修正——模型会真实尝试其内置 exec 工具并被沙箱预期性拒绝（"rejected: blocked by policy"）；提示词/提醒/纠正语/净化文案统一改为「该拒绝是预期噪音：忽略、勿报告、直接用协议」）
  *     （v2.6：resolveCodex 增补「当前 node 同目录的 npm 全局布局」探测——队友包 node prefix 不带 %APPDATA%\npm，旧逻辑回退裸 `codex` 致 spawn ENOENT、PackyAPI 通道实际不可用；修复后包内布局自解析，无需 PATH 依赖）
+ *     （v2.7：多消息捕获——模型可能把 ```tool_call 块发在中间 commentary 消息里，随后继续输出收尾文本；优先选最后一条含可解析工具块的消息，避免被最后一条 agent_message 覆盖）
  *   约束：每轮工具调用 = 一次 codex exec 调用；模型不遵约时退化为纯文本回复。
  *
  * 用法：
@@ -53,7 +54,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const BRIDGE_VERSION = 'v2.6-toolbridge';
+const BRIDGE_VERSION = 'v2.7-toolbridge';
 // v1.2 T5.4：上游健康度——模块级（fail/成功路径与 /health 共同引用）
 let lastUpstreamError = null;
 let lastSuccessAt = null;
@@ -341,6 +342,20 @@ function parseToolCalls(rawText, toolNames) {
   return { calls, text: text.trim() };
 }
 
+// v2.7：模型可能把工具块发在中间消息里；优先选最后一条含可解析工具块的消息，
+// 否则退回最后一条消息，避免被后续收尾文本覆盖。
+function pickToolText(texts, toolNames) {
+  if (Array.isArray(texts) && texts.length) {
+    if (toolNames && toolNames.size) {
+      for (let i = texts.length - 1; i >= 0; i--) {
+        if (parseToolCalls(texts[i], toolNames).calls.length) return texts[i];
+      }
+    }
+    return texts[texts.length - 1];
+  }
+  return '';
+}
+
 // ── SSE 工具 ────────────────────────────────────────────
 function sendSSE(res, type, data) {
   try {
@@ -386,6 +401,7 @@ function streamCodex(cfg, codexCmd, model, prompt, res, log, toolNames, onDone) 
 
     let buf = '';
     let text = '';
+    let texts = [];
     let usage = null;
     let errText = '';
     const sideEvents = new Set();
@@ -408,7 +424,11 @@ function streamCodex(cfg, codexCmd, model, prompt, res, log, toolNames, onDone) 
         let evt;
         try { evt = JSON.parse(line); } catch { continue; }
         if (evt.type === 'item.completed' && evt.item?.type === 'agent_message') {
-          text = evt.item.text || text;
+          const t = evt.item.text || '';
+          if (t) {
+            texts.push(t);
+            text = t;
+          }
         } else if (evt.type === 'turn.completed' && evt.usage) {
           usage = evt.usage;
         } else if (evt.type === 'error') {
@@ -425,15 +445,15 @@ function streamCodex(cfg, codexCmd, model, prompt, res, log, toolNames, onDone) 
       if (done) return;
       done = true;
       clearTimeout(timer);
-      resolve({ text: '', usage: null, sideEvents: Array.from(sideEvents), err: `codex 启动失败: ${e.message}` });
+      resolve({ text: '', texts: [], usage: null, sideEvents: Array.from(sideEvents), err: `codex 启动失败: ${e.message}` });
     });
 
     child.on('close', (code) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
-      if (text) resolve({ text, usage, sideEvents: Array.from(sideEvents), err: null });
-      else resolve({ text: '', usage, sideEvents: Array.from(sideEvents), err: `codex 退出码 ${code}${errText ? ': ' + errText.replace(/\s+/g, ' ').slice(0, 500) : '（无输出）'}` });
+      if (texts.length) resolve({ text, texts, usage, sideEvents: Array.from(sideEvents), err: null });
+      else resolve({ text: '', texts: [], usage, sideEvents: Array.from(sideEvents), err: `codex 退出码 ${code}${errText ? ': ' + errText.replace(/\s+/g, ' ').slice(0, 500) : '（无输出）'}` });
     });
 
     child.stdin.on('error', () => { /* EPIPE：codex 提前退出 */ });
@@ -573,7 +593,8 @@ function streamCodex(cfg, codexCmd, model, prompt, res, log, toolNames, onDone) 
   };
 
   (async () => {
-    let { text, usage, err, sideEvents } = await runCodex(prompt);
+    let { text, texts, usage, err, sideEvents } = await runCodex(prompt);
+    if (texts?.length) text = pickToolText(texts, toolNames) || text;
     if (sideEvents?.length) log('  [诊断] codex 侧非 message 事件: ' + sideEvents.join(', '));
     if (err && !text) return fail(err);
     let parsed = toolNames.size ? parseToolCalls(text, toolNames) : { calls: [], text };
@@ -586,8 +607,9 @@ function streamCodex(cfg, codexCmd, model, prompt, res, log, toolNames, onDone) 
       log(`⚠ ${model} 未按工具协议输出（自动纠错），重试第 ${retried}/${CORRECTIVES.length} 次…`);
       const r = await runCodex(prompt + CORRECTIVES[retried - 1]);
       if (r.sideEvents?.length) log('  [诊断] 重试 codex 侧非 message 事件: ' + r.sideEvents.join(', '));
-      if (r.err && !r.text) { log(`⚠ 重试执行失败: ${String(r.err).slice(0, 120)}`); break; }
-      if (r.text) { text = r.text; usage = r.usage || usage; parsed = parseToolCalls(text, toolNames); }
+      const rtext = (r.texts?.length ? (pickToolText(r.texts, toolNames) || r.text) : r.text) || '';
+      if (r.err && !rtext) { log(`⚠ 重试执行失败: ${String(r.err).slice(0, 120)}`); break; }
+      if (rtext) { text = rtext; usage = r.usage || usage; parsed = parseToolCalls(text, toolNames); }
     }
     const intercepted = toolNames.size > 0 && parsed.calls.length === 0 && isProtocolMiss(text);
     if (intercepted) log(`⚠ ${model} 连续未按工具协议输出，已拦截展示（加警示前缀）`);

@@ -55,7 +55,7 @@ pkg\core\start-bridge.bat
   `%LOCALAPPDATA%\mmcas\codex-bridge.json` 的 `proxy` 字段（留空 = 跟随系统代理）。
 - **每次调用固定 ~13K 输入 token**：Codex CLI 的系统提示开销（其中约 11K 命中缓存）。
 - **模型白名单**：由 `%LOCALAPPDATA%\mmcas\codex-bridge.json` 的 `models` 字段决定（当前 `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-6-astra`；2026-09-11 实测四者均可经 codex 通道调用，名单外请求返回 400）。新增模型 = 改名单 + 重启 bridge。
-- **工具桥接（v2.x，2026-09-11 起，端到端实测）**：桥接支持 function tools——工具 schema 渲染进 prompt，模型用 ```tool_call {"name":..., "arguments":{...}}``` 文本块表达调用，桥接转成 Responses `function_call`；dsh 执行后回传 `function_call_output`，再渲染回 prompt 继续。可靠性：三段式协议提醒（系统提示后详版 + 用户消息后紧贴版 + prompt 末尾版）+ few-shot 示例 + 反编造规则；未产出调用且输出疑似"被拦截"编造时**自动纠正重试一次**。**成本**：每轮工具调用 = 一次 `codex exec`（单轮约 5–15 秒 + 约 15–45K 输入 token，多数命中缓存）——多步任务的总耗时/成本随轮数线性增长；对速度敏感的复杂任务可仍用 deepseek 系。协议为文本级，极小概率模型不遵约时会退化为纯文本回复（日志可查 `自动纠正重试` 记录）。
+- **工具桥接（v2.x，2026-09-11 起，端到端实测）**：桥接支持 function tools——工具 schema 渲染进 prompt，模型用 ```tool_call {"name":..., "arguments":{...}}``` 文本块表达调用，桥接转成 Responses `function_call`；dsh 执行后回传 `function_call_output`，再渲染回 prompt 继续。可靠性：三段式协议提醒（系统提示后详版 + 用户消息后紧贴版 + prompt 末尾版）+ few-shot 示例 + 反编造规则；未产出调用且输出疑似"被拦截"编造时**自动纠正重试一次**。**成本**：每轮工具调用 = 一次 `codex exec`（单轮约 5–15 秒 + 约 15–45K 输入 token，多数命中缓存）——多步任务的总耗时/成本随轮数线性增长；对速度敏感的复杂任务可仍用 deepseek 系。协议为文本级，极小概率模型不遵约时会退化为纯文本回复（日志可查 `自动纠正重试` 记录）。v2.7：多消息捕获——工具块出现在中间 commentary 消息时，不再被最后一条 agent_message 覆盖。
 - **只支持 responses 协议**：dsh 侧路由必须声明 `api: openai-responses`。
 - **不做流式增量**：codex exec 一次性返回结果，桥接按其长度分块伪增量推送，
   以匹配 Responses SSE 形态（dsh 侧体验为「一次性出结果」）。
