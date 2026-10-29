@@ -1,8 +1,8 @@
-# MMCAS 设计文档 v1.2
+# MMCAS 设计文档 v1.3
 
 > Mathematical Modeling Competition Assistance System（数学建模竞赛辅助系统）
-> 2026-09-08 初稿 / v1.1 开工修订 / v1.2 赛后实战修订。
-> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」建设中（六个工作流，见 §9）。
+> 2026-09-08 初稿 / v1.1 开工修订 / v1.2 赛后实战修订 / v1.3 dsh 0.2.1 适配。
+> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」完成；v1.3 dsh 0.2.1（CLI + 桌面端）适配完成。
 
 ## 0. 项目定位
 
@@ -250,7 +250,15 @@ default: deepseek
 12. ✅ 能力层（阶段四）：三角色 role.md 强化 + 11 个角色 skills + 资源库索引（上游直取）
 13. ✅ 队友设备实装 → 赛事实战 → 赛后退役（设备侧收口全部完成）
 
-### v1.2 实战修订（2026-09-15 起，进行中）
+### v1.3 dsh 0.2.1 适配（已完成，2026-10-29）
+
+- **CLI + 桌面端**：适配 dsh 0.2.1-rc.3；桌面端使用独立 `DSH_HOME`、`MMCAS-Desktop` 启动器与面板端口 19398。
+- **profile 合并**：`write-config` / `switch-provider` / `install-bridge` 按条合并 `cordis.patch.yml`，保留 dsh 设置、插件与自定义 panel 端口。
+- **preset 同步**：standard preset 加入 `time-context` / `tool-schedule`，移除 `backgroundMode` / `tool-ralph` / 旧 subagent 行。
+- **Reviewer 迁移**：审阅室配置落到 MMCAS 自有 `reviewer.json`，旧 `settings.yaml` / `.imported` 只读兼容。
+- **稳定性**：冷会话 `prompt` signal、目标会话活跃度、审计报告唯一文件名、credentials `refs`、New Session 本地化匹配。
+
+### v1.2 实战修订（已完成，2026-09-16 发布）
 
 来源：实战反馈（建议书十项）+ 队友端回收材料分析。六个工作流（W0–W6，详见 ROADMAP 与项目管理条目）：
 
@@ -274,7 +282,7 @@ default: deepseek
 - **凭证零入库**：所有 key/token 只存在于本地配置文件（.gitignore 覆盖）或环境变量；代码只读配置，仓库永远只有 `*.example` 占位。开源 = 零改动。
 - **暴露面登记**：所有涉及凭证的位置、性质、开源前处理方式统一登记于 `docs/secrets-registry.md`，新增凭证渠道必须先登记。
 - **开源路线**：完成且运行良好后开源到 GitHub；开源前执行：脱敏 docs（人员/设备/地点）、清 git 历史中的敏感信息（如有）、README 只写功能与差异。
-- **发布状态**：v1.0.0 已开源（MIT）。后续修订按 Milestone 推进，每次发布重复上述检查。
+- **发布状态**：v1.2.0 已开源（MIT）；v1.3（dsh 0.2.1 适配）已合并到 `main`。后续修订按 Milestone 推进，每次发布重复上述检查。
 
 ## 12. 会话生命周期与上下文（v1.2）
 
