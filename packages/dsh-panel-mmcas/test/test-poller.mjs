@@ -95,8 +95,11 @@ async function startInstance(opts) {
         return { sessionId: id };
       },
       rename: async (r) => { renamed.push({ sessionId: r.sessionId, title: r.title }); return { title: r.title, seq: 1 }; },
-      prompt: async (r) => {
-        prompted.push(r);
+      // dsh 0.2.1+ 形状：prompt(request, signal)，缺 signal 立即抛错
+      prompt: async (r, signal) => {
+        if (!signal || typeof signal.throwIfAborted !== 'function') throw new Error('missing AbortSignal');
+        signal.throwIfAborted();
+        prompted.push({ ...r, signal });
         if (opts.failAll) throw new Error('boom');
         injected.push({ sessionId: r.sessionId, mode: r.mode, via: 'prompt', text: r.content[0].text });
         return { accepted: true };
@@ -339,6 +342,7 @@ console.log('\n[C14] 新会话 agent 不可用 ⇒ sessionController.prompt');
   const inst = await startInstance({ ws, localDir: path.join(ROOT, 'c14local'), port: 3306, controllerNoAgent: true, sessions: [] });
   await inst.post('/api/poller/now');
   check('C14 prompt 被调用', inst.prompted.length === 1 && inst.prompted[0].mode === 'queue', JSON.stringify(inst.prompted.map((p) => p.mode)));
+  check('C14 prompt 传入了 AbortSignal', !!(inst.prompted[0] && inst.prompted[0].signal && typeof inst.prompted[0].signal.throwIfAborted === 'function'));
   check('C14 注入内容经 prompt 通道', inst.injected.length === 1 && inst.injected[0].via === 'prompt');
   inst.dispose();
 }
@@ -368,6 +372,36 @@ console.log('\n[C15] notices：normal ⇒ queue / urgent+stop ⇒ steer + scope 
   check('C15 delivered 回写（两条）', /^status: delivered$/m.test(f1) && /^status: delivered$/m.test(f2) && /deliveredAt/m.test(f1));
   check('C15 tick.notices 记录两条', !!(r.tick && r.tick.notices && r.tick.notices.length === 2), JSON.stringify(r.tick && r.tick.notices));
   inst.dispose();
+}
+
+// ---------- C16：目标会话活跃度 ----------
+console.log('\n[C16] 目标会话：按最后事件时间选最近活跃（兼容 header.createdAt 回退）');
+{
+  const ws = makeWs(path.join(ROOT, 'c16ws'));
+  writeCard(ws, 'T-031', { title: '活跃度一' });
+  const inst = await startInstance({
+    ws, localDir: path.join(ROOT, 'c16local-a'), port: 3308, noController: true,
+    sessions: [
+      { id: 's-old', header: { createdAt: 1000 }, seq: 2, eventAt: (i) => (i === 1 ? { time: 5000 } : null) },
+      { id: 's-new', header: { createdAt: 9000 }, seq: 1, eventAt: (i) => (i === 0 ? { time: 2000 } : null) },
+    ],
+  });
+  await inst.post('/api/poller/now');
+  check('C16 最后事件时间更晚的 s-old 被选中', inst.injected.length === 1 && inst.injected[0].sessionId === 's-old', JSON.stringify(inst.injected.map((i) => i.sessionId)));
+  inst.dispose();
+
+  const ws2 = makeWs(path.join(ROOT, 'c16ws2'));
+  writeCard(ws2, 'T-032', { title: '活跃度二' });
+  const inst2 = await startInstance({
+    ws: ws2, localDir: path.join(ROOT, 'c16local-b'), port: 3309, noController: true,
+    sessions: [
+      { id: 's-old2', header: { createdAt: 1000 } },
+      { id: 's-new2', header: { createdAt: 9000 } },
+    ],
+  });
+  await inst2.post('/api/poller/now');
+  check('C16 无事件时间时回退 header.createdAt（s-new2）', inst2.injected.length === 1 && inst2.injected[0].sessionId === 's-new2', JSON.stringify(inst2.injected.map((i) => i.sessionId)));
+  inst2.dispose();
 }
 
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');

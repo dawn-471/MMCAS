@@ -477,7 +477,26 @@ export function apply(ctx, config = {}) {
       const hit = live.find((x) => x.s && x.s.id === poller.targetSessionId);
       if (hit) return hit;
     }
-    const ts = (x) => Number((x.s && (x.s.updatedAt || x.s.lastActiveAt || x.s.lastActivityAt || x.s.modifiedAt)) || 0);
+    // dsh 的 Session 没有 updatedAt/lastActiveAt；真实活动时间取最后一个事件的 time。
+    // 兼容旧版/测试桩的同名字段；都没有时退回 header.createdAt，再退回创建顺序。
+    const ts = (x) => {
+      const s = (x && x.s) || {};
+      for (const k of ['updatedAt', 'lastActiveAt', 'lastActivityAt', 'modifiedAt']) {
+        const n = Number(s[k]);
+        if (n > 0) return n;
+      }
+      try {
+        const lastSeq = Number(s.seq);
+        if (lastSeq > 0) {
+          const ev = typeof s.eventAt === 'function' ? s.eventAt(lastSeq - 1) : null;
+          if (ev && Number(ev.time) > 0) return Number(ev.time);
+          const arr = typeof s.snapshotEvents === 'function' ? s.snapshotEvents(lastSeq - 1) : null;
+          if (arr && arr[0] && Number(arr[0].time) > 0) return Number(arr[0].time);
+        }
+      } catch {}
+      const created = Number(s.header && s.header.createdAt);
+      return created > 0 ? created : 0;
+    };
     const newest = live.slice().sort((a, b) => ts(b) - ts(a))[0];
     return ts(newest) > 0 ? newest : live[live.length - 1];
   }
@@ -519,11 +538,25 @@ export function apply(ctx, config = {}) {
     }
     try {
       if (ctx && ctx.sessionController && typeof ctx.sessionController.prompt === 'function') {
-        await ctx.sessionController.prompt({
-          requestId: randomUUID(), sessionId,
-          mode: mode === 'steer' ? 'steer' : 'queue',
-          content: [{ type: 'text', text }],
-        });
+        // dsh 0.2.1+ 的 prompt(request, signal) 会立即 signal.throwIfAborted()；
+        // 不传 signal 会让冷会话兜底通道直接 TypeError（notices/打回续做全部失效）。
+        const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+          ? AbortSignal.timeout(60000)
+          : undefined;
+        if (signal) {
+          await ctx.sessionController.prompt({
+            requestId: randomUUID(), sessionId,
+            mode: mode === 'steer' ? 'steer' : 'queue',
+            content: [{ type: 'text', text }],
+          }, signal);
+        } else {
+          const ac = new AbortController();
+          await ctx.sessionController.prompt({
+            requestId: randomUUID(), sessionId,
+            mode: mode === 'steer' ? 'steer' : 'queue',
+            content: [{ type: 'text', text }],
+          }, ac.signal);
+        }
         return true;
       }
     } catch (e) {
@@ -685,8 +718,27 @@ export function apply(ctx, config = {}) {
     return null;
   }
   const auditState = { running: false, id: '', dimension: '', startedAt: '', result: null };
-  // ---- v1.2.x：Reviewer 配置（settings.yaml reviewer 段读写 + 缓存） ----
+  // ---- v1.2.x：Reviewer 配置（MMCAS 自有 reviewer.json；dsh 0.2.x 的 settings.yaml 只做只读迁移） ----
   let reviewerCfgCache = { at: 0, data: null };
+  function reviewerJsonPath() { return path.join(local, 'reviewer.json'); }
+  function auditDshHome() {
+    const mmcasHome = process.env.MMCAS_HOME || path.join(os.homedir(), 'AppData', 'Local', 'mmcas');
+    return process.env.DSH_HOME || path.join(mmcasHome, 'dsh-home');
+  }
+  function readReviewerJson() {
+    try {
+      const j = JSON.parse(readFileSync(reviewerJsonPath(), 'utf8'));
+      return j && typeof j === 'object' && !Array.isArray(j) ? j : null;
+    } catch { return null; }
+  }
+  function writeReviewerJson(cfg) {
+    try {
+      mkdirSync(local, { recursive: true });
+      writeFileSync(reviewerJsonPath(), JSON.stringify({ version: 1, ...cfg }, null, 2) + '\n');
+      return true;
+    } catch { return false; }
+  }
+  // 旧安装兼容：settings.yaml / settings.yaml.imported 里的 reviewer 段只读。
   function reviewerSection(settingsPath) {
     try {
       if (!existsSync(settingsPath)) return null;
@@ -703,38 +755,59 @@ export function apply(ctx, config = {}) {
       return Object.keys(cfg).length ? cfg : null;
     } catch { return null; }
   }
-  function writeReviewerSection(settingsPath, cfg) {
-    try {
-      const s = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : '';
-      const eol = s.includes('\r\n') ? '\r\n' : '\n';
-      const out = [];
-      let inSec = false;
-      for (const raw of s.split('\n')) {
-        const line = raw.replace(/\r$/, '');
-        const isTop = /^\S/.test(line) && line.trim() !== '';
-        if (!inSec && /^reviewer\s*:/.test(line)) { inSec = true; continue; }
-        if (inSec) { if (isTop) inSec = false; else continue; }
-        out.push(line);
+  function legacyReviewerSection() {
+    const mmcasHome = process.env.MMCAS_HOME || path.join(os.homedir(), 'AppData', 'Local', 'mmcas');
+    const dshHome = process.env.DSH_HOME || path.join(mmcasHome, 'dsh-home');
+    for (const name of ['settings.yaml', 'settings.yaml.imported']) {
+      const cur = reviewerSection(path.join(dshHome, name));
+      if (cur) return cur;
+    }
+    return null;
+  }
+  // 在 credentials 的 refs 段内安全设置 key（保留其他 refs/records；避免重复 refs: 段）
+  function setCredRef(text, envName, value) {
+    const lines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
+    const out = [];
+    let inRefs = false;
+    let inserted = false;
+    const keyRe = new RegExp('^\\s+' + envName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:');
+    for (const line of lines) {
+      if (!inRefs && /^refs:\s*\{\s*\}\s*$/.test(line)) {
+        out.push('refs:', `  ${envName}: ${value}`);
+        inserted = true;
+        inRefs = true;
+        continue;
       }
-      while (out.length && out[out.length - 1].trim() === '') out.pop();
-      const block = [
-        '# Reviewer（审阅人）——MMCAS 第四方审阅实例配置。换专家模型：改 endpoint/model/protocol；key 存入 .credentials.yaml 的 refs（apiKeyEnv 指向）',
-        'reviewer:',
-        '  endpoint: ' + cfg.endpoint,
-        '  apiKeyEnv: ' + cfg.apiKeyEnv,
-        '  model: ' + cfg.model,
-        '  protocol: ' + cfg.protocol,
-        '  maxFeeCny: ' + cfg.maxFeeCny,
-      ];
-      writeFileSync(settingsPath, (out.join('\n') + '\n' + block.join('\n') + '\n').replace(/\n/g, eol));
-      return true;
-    } catch { return false; }
+      if (!inRefs && /^refs:\s*$/.test(line)) {
+        out.push(line);
+        inRefs = true;
+        continue;
+      }
+      if (inRefs) {
+        if (/^\S/.test(line) && line.trim() !== '') {
+          if (!inserted) { out.push(`  ${envName}: ${value}`); inserted = true; }
+          inRefs = false;
+          out.push(line);
+          continue;
+        }
+        if (keyRe.test(line)) {
+          out.push(`  ${envName}: ${value}`);
+          inserted = true;
+          continue;
+        }
+      }
+      out.push(line);
+    }
+    if (inRefs && !inserted) { out.push(`  ${envName}: ${value}`); inserted = true; }
+    if (!inserted) out.push('refs:', `  ${envName}: ${value}`);
+    return out.join('\n').replace(/\n*$/, '\n');
   }
   function runAuditCli(dimension, opts) {
     return new Promise((resolve) => {
       const runner = findAuditRunner();
       if (!runner) { resolve({ ok: false, error: '未找到 audit-run.mjs（在 profile patch 的 mmcas-panel.config 配 coreDir，或使用含 packages/core 的布局）' }); return; }
-      const args = [runner, '--dimension', dimension, '--workspace', ws];
+      const args = [runner, '--dimension', dimension, '--workspace', ws,
+        '--dsh-home', auditDshHome(), '--reviewer-config', reviewerJsonPath()];
       if (opts && opts.dryRun) args.push('--dry-run');
       if (opts && opts.confirm) args.push('--confirm');
       if (opts && opts.model) args.push('--model', String(opts.model));
@@ -1203,12 +1276,12 @@ export function apply(ctx, config = {}) {
       }
     }
 
-    // ---- v1.2.x：Reviewer 配置读写（settings.yaml 的 reviewer 段 + credentials 的 key） ----
+    // ---- v1.2.x：Reviewer 配置读写（MMCAS reviewer.json；key 仍走 dsh credentials） ----
     if (p === '/api/audit/config' && req.method === 'GET') {
       if (Date.now() - reviewerCfgCache.at < 30000 && reviewerCfgCache.data) return json(res, 200, reviewerCfgCache.data);
       const runner = findAuditRunner();
       if (!runner) return json(res, 200, { ok: false, error: '未找到 audit-run.mjs（配置 coreDir）' });
-      const r2 = spawnSync(process.execPath, [runner, '--show-config'], { encoding: 'utf8', timeout: 20000, windowsHide: true });
+      const r2 = spawnSync(process.execPath, [runner, '--show-config', '--dsh-home', auditDshHome(), '--reviewer-config', reviewerJsonPath()], { encoding: 'utf8', timeout: 20000, windowsHide: true });
       let cfg = null;
       try { cfg = JSON.parse((r2.stdout || '').trim()); } catch {}
       const data = cfg ? { ok: true, ...cfg } : { ok: false, error: ('解析失败: ' + String(r2.stderr || r2.stdout || '').trim()).slice(0, 220) };
@@ -1219,28 +1292,27 @@ export function apply(ctx, config = {}) {
       try {
         const b = await readBody(req);
         const mmcasHome = process.env.MMCAS_HOME || path.join(os.homedir(), 'AppData', 'Local', 'mmcas');
-        const settingsPath = path.join(mmcasHome, 'dsh-home', 'settings.yaml');
-        const credPath = path.join(mmcasHome, 'dsh-home', '.credentials.yaml');
-        const cur = reviewerSection(settingsPath) || {};
+        const dshHome = process.env.DSH_HOME || path.join(mmcasHome, 'dsh-home');
+        const credPath = path.join(dshHome, '.credentials.yaml');
+        const cur = readReviewerJson() || legacyReviewerSection() || {};
+        const endpointIn = b.endpoint !== undefined ? String(b.endpoint).trim() : '';
+        const envIn = b.apiKeyEnv !== undefined ? String(b.apiKeyEnv).trim() : '';
+        const modelIn = b.model !== undefined ? String(b.model).trim() : '';
         const nxt = {
-          endpoint: b.endpoint !== undefined ? String(b.endpoint).trim() : (cur.endpoint || 'http://127.0.0.1:3220/v1/responses'),
-          apiKeyEnv: b.apiKeyEnv !== undefined ? String(b.apiKeyEnv).trim() : (cur.apiKeyEnv || 'REVIEWER_API_KEY'),
-          model: b.model !== undefined ? String(b.model).trim() : (cur.model || 'gpt-6-astra'),
+          endpoint: endpointIn || cur.endpoint || 'http://127.0.0.1:3220/v1/responses',
+          apiKeyEnv: envIn || cur.apiKeyEnv || 'REVIEWER_API_KEY',
+          model: modelIn || cur.model || 'gpt-6-astra',
           protocol: String(b.protocol !== undefined ? b.protocol : (cur.protocol || 'responses')) === 'chat' ? 'chat' : 'responses',
           maxFeeCny: Number(b.maxFeeCny !== undefined ? b.maxFeeCny : (cur.maxFeeCny || 30)) || 30,
         };
-        const okWrite = writeReviewerSection(settingsPath, nxt);
-        if (!okWrite) return json(res, 500, { ok: false, error: 'settings.yaml 写入失败' });
+        if (!writeReviewerJson(nxt)) return json(res, 500, { ok: false, error: 'reviewer.json 写入失败' });
         if (b.apiKey && String(b.apiKey).trim()) {
           const k = String(b.apiKey).trim();
-          let c = existsSync(credPath) ? readFileSync(credPath, 'utf8') : 'version: 1\nrefs:\n';
-          if (/REVIEWER_API_KEY\s*:/.test(c)) c = c.replace(/(REVIEWER_API_KEY\s*:\s*)([^\r\n]+)/, (mm, p1) => p1 + k);
-          else if (/^refs:\s*$/m.test(c)) c = c.replace(/^refs:\s*$/m, 'refs:\n  REVIEWER_API_KEY: ' + k);
-          else c = c.trimEnd() + '\nrefs:\n  REVIEWER_API_KEY: ' + k + '\n';
-          writeFileSync(credPath, c);
+          const c = existsSync(credPath) ? readFileSync(credPath, 'utf8') : 'version: 1\nrefs:\n';
+          writeFileSync(credPath, setCredRef(c, nxt.apiKeyEnv, k));
         }
         reviewerCfgCache = { at: 0, data: null };
-        return json(res, 200, { ok: true });
+        return json(res, 200, { ok: true, path: reviewerJsonPath() });
       } catch (e) {
         return json(res, 500, { ok: false, error: String((e && e.message) || e).slice(0, 220) });
       }

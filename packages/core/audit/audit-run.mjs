@@ -1,27 +1,25 @@
 #!/usr/bin/env node
 /**
- * audit-run.mjs —— MMCAS Reviewer（审阅人）运行器 v2
+ * audit-run.mjs — MMCAS Reviewer（审阅人）运行器 v2
  *
- * Reviewer = MMCAS 第四方：独立工作流（不接任务卡、不进三联通调度），系统内组件。
+ * Reviewer = MMCAS 第四方：独立工作流（不接任务卡、不进三联通调度）。
  * 链路：材料收集 → 脱敏 → payload → 专家模型端点（可配置）→ 审阅报告 + meta 落盘。
  *
- * 配置（自由度）：优先级 = CLI 参数 > dsh settings.yaml 的 `reviewer:` 段 > 内置默认。
- *   settings 段字段：
- *     reviewer:
- *       endpoint: http://127.0.0.1:3220/v1/responses   # 任意 OpenAI 兼容完整 URL
- *       apiKeyEnv: REVIEWER_API_KEY                     # key 存 .credentials.yaml 的 refs
- *       model: gpt-6-astra
- *       protocol: responses                             # responses | chat
- *       maxFeeCny: 30                                   # 预算守门阈值
- *   dsh-home 定位：--dsh-home > 环境变量 MMCAS_HOME > 默认 %LOCALAPPDATA%/mmcas/dsh-home
+ * 配置（自由度）：优先级 = CLI 参数 > MMCAS reviewer.json > 旧 settings.yaml 的
+ *   reviewer 段（只读兼容） > settings.yaml.imported > 内置默认。
+ *   reviewer.json 默认位于 <MMCAS_HOME>/reviewer.json（--reviewer-config 可指定），
+ *   字段：endpoint / apiKeyEnv / model / protocol(responses|chat) / maxFeeCny；
+ *   key 仍存 dsh .credentials.yaml 的 refs。
+ *   dsh-home 定位：--dsh-home > DSH_HOME > MMCAS_HOME/dsh-home > 默认。
  *
  * 用法:
  *   node audit-run.mjs --dimension model|code|paper --workspace <wsDir>
  *     [--files <list.txt>] [--paths <dir1,dir2>] [--note <text>] [--note-file <f>]
  *     [--endpoint <url>] [--bridge <url>]  # 二者同义（--bridge 兼容旧调用）
  *     [--model <name>] [--protocol responses|chat] [--max-fee <cny>]
- *     [--out <dir>] [--scrub <rules.txt>] [--max-chars <N>] [--dry-run] [--confirm]
- *   node audit-run.mjs --show-config [--dsh-home <dir>]   # 打印解析后的配置（不含 key 值）
+ *     [--reviewer-config <file>] [--out <dir>] [--scrub <rules.txt>] [--max-chars <N>]
+ *     [--dry-run] [--confirm]
+ *   node audit-run.mjs --show-config [--dsh-home <dir>] [--reviewer-config <file>]
  *
  * 输出：stdout 末行 `AUDIT_RESULT={json}`（供面板/调用方解析）。
  */
@@ -63,6 +61,7 @@ function dshHome() {
   return arg('dsh-home') || path.join(mmcasHome(), 'dsh-home');
 }
 // 轻量读取 settings.yaml 的 reviewer 段（YAML 子集：缩进二空格的键值对）
+// dsh 0.2.x 会把 settings.yaml 导入 profile patch 后改名 .imported，因此两个文件都读。
 function readReviewerSection(settingsPath) {
   if (!existsSync(settingsPath)) return null;
   const lines = readFileSync(settingsPath, 'utf8').split('\n');
@@ -77,6 +76,15 @@ function readReviewerSection(settingsPath) {
   }
   return Object.keys(cfg).length ? cfg : null;
 }
+function reviewerConfigPath() {
+  return arg('reviewer-config', path.join(mmcasHome(), 'reviewer.json'));
+}
+function readReviewerJson(file) {
+  try {
+    const j = JSON.parse(readFileSync(file, 'utf8'));
+    return j && typeof j === 'object' && !Array.isArray(j) ? j : null;
+  } catch { return null; }
+}
 // 读 credentials refs 中某 env 名的值（仅内存使用，不打印）
 function readCredRef(credPath, envName) {
   if (!envName || !existsSync(credPath)) return null;
@@ -90,34 +98,41 @@ function readCredRef(credPath, envName) {
 function resolveReviewerConfig() {
   const dh = dshHome();
   const settingsPath = arg('settings', path.join(dh, 'settings.yaml'));
+  const importedPath = settingsPath + '.imported';
+  const cfgPath = reviewerConfigPath();
   const credPath = arg('credentials', path.join(dh, '.credentials.yaml'));
+  const fromFile = readReviewerJson(cfgPath) || {};
   const fromSettings = readReviewerSection(settingsPath) || {};
+  const fromImported = fromSettings && Object.keys(fromSettings).length ? null : readReviewerSection(importedPath);
+  const legacy = fromSettings && Object.keys(fromSettings).length ? fromSettings : (fromImported || {});
+  const legacySource = fromSettings && Object.keys(fromSettings).length ? 'settings' : (fromImported ? 'settings.imported' : 'default');
   let source = 'default';
   const pick = (cliName, secName, dflt) => {
     const cli = arg(cliName);
     if (cli !== undefined && cli !== null) { source = 'cli'; return cli; }
-    if (fromSettings[secName] !== undefined) { source = source === 'cli' ? 'cli' : 'settings'; return fromSettings[secName]; }
+    if (fromFile[secName] !== undefined) { source = source === 'cli' ? 'cli' : 'reviewer.json'; return fromFile[secName]; }
+    if (legacy[secName] !== undefined) { source = source === 'cli' ? 'cli' : legacySource; return legacy[secName]; }
     return dflt;
   };
   // --bridge 与 --endpoint 同义（兼容旧调用）
   const endpointCli = arg('endpoint', arg('bridge'));
-  const endpoint = endpointCli !== undefined && endpointCli !== null ? (source = 'cli', endpointCli)
-    : (fromSettings.endpoint !== undefined ? (source = source === 'cli' ? 'cli' : 'settings', fromSettings.endpoint) : DEFAULTS.endpoint);
-  const model = arg('model') !== undefined && arg('model') !== null ? (source = 'cli', arg('model'))
-    : (fromSettings.model !== undefined ? (source = source === 'cli' ? 'cli' : 'settings', fromSettings.model) : DEFAULTS.model);
-  const protocol = arg('protocol') !== undefined && arg('protocol') !== null ? (source = 'cli', arg('protocol'))
-    : (fromSettings.protocol !== undefined ? (source = source === 'cli' ? 'cli' : 'settings', fromSettings.protocol) : DEFAULTS.protocol);
-  const maxFee = Number(arg('max-fee', fromSettings.maxFeeCny !== undefined ? fromSettings.maxFeeCny : DEFAULTS.maxFeeCny)) || DEFAULTS.maxFeeCny;
-  const apiKeyEnv = fromSettings.apiKeyEnv || null;
+  const endpoint = endpointCli !== undefined && endpointCli !== null
+    ? (source = 'cli', endpointCli)
+    : pick('__no_cli_arg__', 'endpoint', DEFAULTS.endpoint);
+  const model = pick('model', 'model', DEFAULTS.model);
+  const protocol = pick('protocol', 'protocol', DEFAULTS.protocol);
+  const maxFee = Number(arg('max-fee', fromFile.maxFeeCny !== undefined ? fromFile.maxFeeCny : (legacy.maxFeeCny !== undefined ? legacy.maxFeeCny : DEFAULTS.maxFeeCny))) || DEFAULTS.maxFeeCny;
+  const apiKeyEnv = fromFile.apiKeyEnv || legacy.apiKeyEnv || null;
   const apiKey = readCredRef(credPath, apiKeyEnv);
-  return { endpoint, model, protocol: (protocol === 'chat' ? 'chat' : 'responses'), maxFeeCny: maxFee, apiKeyEnv, apiKey, hasKey: !!apiKey, source, settingsPath };
+  return { endpoint, model, protocol: (protocol === 'chat' ? 'chat' : 'responses'), maxFeeCny: maxFee, apiKeyEnv, apiKey, hasKey: !!apiKey, source, settingsPath, reviewerConfigPath: cfgPath };
 }
 
 if (flag('show-config')) {
   const c = resolveReviewerConfig();
   console.log(JSON.stringify({
     endpoint: c.endpoint, model: c.model, protocol: c.protocol, maxFeeCny: c.maxFeeCny,
-    apiKeyEnv: c.apiKeyEnv, hasKey: c.hasKey, source: c.source, settingsPath: c.settingsPath,
+    apiKeyEnv: c.apiKeyEnv, hasKey: c.hasKey, source: c.source,
+    settingsPath: c.settingsPath, reviewerConfigPath: c.reviewerConfigPath,
   }, null, 2));
   process.exit(0);
 }
@@ -343,8 +358,9 @@ let { text: finalText, usage } = run;
 // ---------- 5. 报告落盘 ----------
 const outDir = arg('out', path.join(ws, 'audit'));
 mkdirSync(outDir, { recursive: true });
-const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const reportPath = path.join(outDir, `AUDIT-${dimension}-${ts}.md`);
+const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
+const runId = Math.random().toString(36).slice(2, 6);
+const reportPath = path.join(outDir, `AUDIT-${dimension}-${ts}-${runId}.md`);
 const inTok = usage && (usage.input_tokens || usage.prompt_tokens);
 const outTok = usage && (usage.output_tokens || usage.completion_tokens);
 const header = [

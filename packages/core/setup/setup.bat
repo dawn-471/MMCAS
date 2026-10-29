@@ -138,7 +138,8 @@ if not defined REPO (
 :: ---------- 7. dsh（版本锁定，避免上游漂移）+ codex CLI（PackyAPI 通道） ----------
 echo [7/9] 安装 Agent 运行环境（dsh + codex）...
 call npm config set registry https://registry.npmmirror.com >nul 2>&1
-call npm install -g @deepseek-ai/dsh@0.2.0-rc.2 >nul 2>&1
+if not defined MMCAS_DSH_VERSION set "MMCAS_DSH_VERSION=0.2.1-rc.3"
+call npm install -g @deepseek-ai/dsh@!MMCAS_DSH_VERSION! >nul 2>&1
 call dsh --version >nul 2>&1
 if errorlevel 1 (set "FAILED=!FAILED! [7]dsh安装") else (echo   dsh OK)
 :: codex CLI：PackyAPI Codex 通道必需（体积约 380MB，首次安装需数分钟）
@@ -160,13 +161,13 @@ if errorlevel 1 set "FAILED=!FAILED! [8]write-config"
 if exist "pkg\secrets\packy-key.txt" (
   set "PROXYARG="
   if exist "config\proxy.txt" for /f "usebackq delims=" %%p in ("config\proxy.txt") do set "PROXYARG=--proxy %%p"
-  node pkg\core\codex-bridge\install-bridge.mjs --key-file "pkg\secrets\packy-key.txt" --dsh-home "!MMDSH!" !PROXYARG!
+  node pkg\core\codex-bridge\install-bridge.mjs --key-file "pkg\secrets\packy-key.txt" --dsh-home "!MMDSH!" --profiles web,desktop !PROXYARG!
   if errorlevel 1 (set "WARNED=!WARNED! [8]PackyAPI通道配置失败") else (echo   PackyAPI 通道 OK)
 ) else (
   set "WARNED=!WARNED! [8]未预配 PackyAPI key（可选通道）"
 )
 if exist "pkg\secrets\apikey.txt" (
-  node pkg\core\switch-provider.mjs switch deepseek --config "%CD%\config\providers.yaml" --settings "!MMDSH!\settings.yaml" --credentials "!MMDSH!\.credentials.yaml" --role %ROLE%
+  node pkg\core\switch-provider.mjs switch deepseek --config "%CD%\config\providers.yaml" --dsh-home "!MMDSH!" --profiles web,desktop --credentials "!MMDSH!\.credentials.yaml" --role %ROLE%
   if errorlevel 1 set "FAILED=!FAILED! [8]provider切换"
 ) else (
   set "WARNED=!WARNED! [8]未预配API key（请在页面填写）"
@@ -205,10 +206,19 @@ del /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\start-sync.bat" 
 powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s1 = $ws.CreateShortcut([Environment]::GetFolderPath('Startup') + '\MMCAS-Sync.lnk'); $s1.TargetPath = '%CD%\pkg\core\start-sync.bat'; $s1.WorkingDirectory = '%CD%'; $s1.WindowStyle = 7; $s1.Save(); $s2 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\MMCAS-Agent.lnk'); $s2.TargetPath = '%CD%\pkg\core\start-agent.bat'; $s2.WorkingDirectory = '%CD%'; $s2.Save()"
 if errorlevel 1 (set "FAILED=!FAILED! [9]快捷方式") else (echo   OK)
 
+set "DSHEXE="
+if exist "%LOCALAPPDATA%\Programs\DeepSeek Harness\DeepSeek Harness.exe" set "DSHEXE=%LOCALAPPDATA%\Programs\DeepSeek Harness\DeepSeek Harness.exe"
+if not defined DSHEXE if exist "%ProgramFiles%\DeepSeek Harness\DeepSeek Harness.exe" set "DSHEXE=%ProgramFiles%\DeepSeek Harness\DeepSeek Harness.exe"
+if not defined DSHEXE if exist "%ProgramFiles(x86)%\DeepSeek Harness\DeepSeek Harness.exe" set "DSHEXE=%ProgramFiles(x86)%\DeepSeek Harness\DeepSeek Harness.exe"
+if defined DSHEXE (
+  powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s3 = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\MMCAS-Desktop.lnk'); $s3.TargetPath = '%CD%\pkg\core\start-desktop.bat'; $s3.WorkingDirectory = '%CD%'; $s3.Save()"
+  if errorlevel 1 (set "WARNED=!WARNED! [9]桌面快捷方式") else (echo   桌面端快捷方式 OK)
+)
+
 echo ============================================
 if defined FAILED echo   安装完成，但以下步骤失败：!FAILED!
 if defined FAILED echo   请截图发给维护者
-if not defined FAILED echo   安装完成！桌面双击 MMCAS-Agent 打开助手页面
+if not defined FAILED echo   安装完成！桌面双击 MMCAS-Agent 打开助手页面（如装桌面端，用 MMCAS-Desktop 启动）
 if defined WARNED echo   提示：!WARNED!
 echo ============================================
 pause

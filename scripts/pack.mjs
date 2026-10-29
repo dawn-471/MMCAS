@@ -59,7 +59,8 @@ mkdirSync(path.join(PKG, 'core', 'ssh'), { recursive: true });
 mkdirSync(path.join(PKG, 'core', 'codex-bridge'), { recursive: true });
 cpSync(path.join(ROOT, 'packages', 'core', 'sync', 'sync-daemon.mjs'), path.join(PKG, 'core', 'sync', 'sync-daemon.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'write-config.mjs'), path.join(PKG, 'core', 'write-config.mjs'));
-cpSync(path.join(ROOT, 'packages', 'core', 'standard-preset-020.yml'), path.join(PKG, 'core', 'standard-preset-020.yml'));
+cpSync(path.join(ROOT, 'packages', 'core', 'profile-patch.mjs'), path.join(PKG, 'core', 'profile-patch.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'standard-preset-021.yml'), path.join(PKG, 'core', 'standard-preset-021.yml'));
 cpSync(path.join(ROOT, 'packages', 'core', 'register-workspace.mjs'), path.join(PKG, 'core', 'register-workspace.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'switch-provider.mjs'), path.join(PKG, 'core', 'switch-provider.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'panel', 'panel.mjs'), path.join(PKG, 'core', 'panel', 'panel.mjs'));
@@ -68,6 +69,7 @@ cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-log.mjs'), path.joi
 cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-search.mjs'), path.join(PKG, 'core', 'memory', 'memory-search.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-sync.bat'), path.join(PKG, 'core', 'start-sync.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-agent.bat'), path.join(PKG, 'core', 'start-agent.bat'));
+cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-desktop.bat'), path.join(PKG, 'core', 'start-desktop.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-panel.bat'), path.join(PKG, 'core', 'start-panel.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-bridge.bat'), path.join(PKG, 'core', 'start-bridge.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'enable-ssh.ps1'), path.join(PKG, 'core', 'enable-ssh.ps1'));

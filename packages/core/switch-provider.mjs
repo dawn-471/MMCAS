@@ -1,23 +1,32 @@
 #!/usr/bin/env node
 /**
- * MMCAS provider 切换器 v1
- * 把 providers.yaml 中的选中项写入 dsh 配置（settings.yaml + .credentials.yaml），零 npm 依赖。
+ * MMCAS provider 切换器 v2
+ *
+ * 把 providers.yaml 中的选中项写入 dsh 活动 profile 的 cordis.patch.yml
+ * （dsh 0.2.x 的运行时配置源），并同步 .credentials.yaml 的 refs。
  *
  * 用法:
  *   node switch-provider.mjs list [--config <providers.yaml>]
- *   node switch-provider.mjs switch <id> [--model <模型名>] [--config <...>] [--settings <settings.yaml>] [--credentials <...>] [--dry-run]
+ *   node switch-provider.mjs switch <id> [--model <模型>] [--config <...>]
+ *     [--dsh-home <dir>] [--profile <name>|--profiles <a,b>] [--credentials <...>] [--dry-run]
+ *   # 兼容旧调用：只给 --settings <settings.yaml> 时写 legacy settings.yaml（dsh 会一次性导入）
  *
- * 机制（实测 dsh 0.1.2-rc.1）:
- *   - settings.yaml 的 `llm-deepseek:` 段热覆盖 baseURL/apiKeyEnv，无需重启
- *   - .credentials.yaml 的 refs 段存 env 名→key 映射，apiKeyEnv 引用该 env 名
- *   - agent-default-model 段切换默认模型（--model 指定，缺省取 models 列表首项）
- *   - llm-deepseek 段写入 baseURL/apiKeyEnv/reasoningEffort + models 目录：
- *     catalog 由 providers.yaml 的 models 生成（dsh settings 的 models 会整体替换
- *     内置默认列表，故必须写全）；段内其余手动维护的键保留不动
+ * 机制:
+ *   - 默认写 <DSH_HOME>/profiles/<profile>/cordis.patch.yml 的 llm-deepseek /
+ *     agent-default-model 条目；按 key 合并，保留 profile patch 中其他设置/插件。
+ *   - llm-deepseek 写 baseURL/apiKeyEnv/reasoningEffort，并用 providers.yaml 的
+ *     models 生成完整 catalog（models 为空时不覆盖既有 catalog）。
+ *   - credentials 的 refs 写 MMCAS_PROVIDER_KEY；其他 refs/records 保留。
+ *   - dsh 0.2.x 的 settings.yaml 只做一次性导入兼容；存在时同步更新，避免旧值回灌。
  */
+
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {
+  upsertEntry, getEntry, setEntryConfigScalars, setEntryConfigBlock,
+  readText, writeText, yamlScalar, ensureProfileScaffold,
+} from './profile-patch.mjs';
 
 function arg(name, def) {
   const i = process.argv.indexOf(`--${name}`);
@@ -207,43 +216,23 @@ if (cmd === 'switch') {
     process.exit(2);
   }
   const chosenModel = modelArg || models[0] || 'deepseek-v4-flash';
-  const settingsPath = arg('settings', path.join(os.homedir(), '.dsh', 'settings.yaml'));
-  const credPath = arg('credentials', path.join(os.homedir(), '.dsh', '.credentials.yaml'));
+  const explicitSettings = arg('settings', null);
+  const explicitProfile = process.argv.includes('--profile') || process.argv.includes('--profiles') || process.argv.includes('--dsh-home');
+  const dshHome = arg('dsh-home', process.env.DSH_HOME || path.join(os.homedir(), '.dsh'));
+  const profileNames = String(arg('profiles', arg('profile', process.env.MMCAS_DSH_PROFILE || 'web')))
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const settingsPath = explicitSettings || path.join(dshHome, 'settings.yaml');
+  const credPath = arg('credentials', explicitSettings
+    ? path.join(path.dirname(settingsPath), '.credentials.yaml')
+    : path.join(dshHome, '.credentials.yaml'));
   const dryRun = process.argv.includes('--dry-run');
   // v1.2 T6.1：reasoningEffort 按角色默认（coder=max / writer=high / modeler=high），可 --effort 覆盖
   const roleArg = arg('role', process.env.MMCAS_ROLE || '');
   const effort = arg('effort', ({ coder: 'max', writer: 'high', modeler: 'high' })[roleArg] || 'high');
+  // 只给 --settings、未给 profile 参数 = 旧版 legacy 模式（测试/旧脚本兼容）。
+  const legacyOnly = !!explicitSettings && !explicitProfile;
 
-  const settingsText = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : '';
   const credText = existsSync(credPath) ? readFileSync(credPath, 'utf8') : 'version: 1\nrefs:\n';
-
-  // 1. llm-deepseek 段：已存在则逐键更新（保留其他手动键），不存在则新建
-  //    models 目录由 providers.yaml 生成；models 为空时不写（避免清空内置目录）
-  const catalogLines = models.length > 0 ? buildCatalogLines(models) : null;
-  const hasDeepseekSection = settingsText.split('\n').some((l) => l.startsWith('llm-deepseek:'));
-  let newSettings;
-  if (hasDeepseekSection) {
-    newSettings = setKeyInSection(settingsText, 'llm-deepseek', 'baseURL', p.base_url);
-    newSettings = setKeyInSection(newSettings, 'llm-deepseek', 'apiKeyEnv', 'MMCAS_PROVIDER_KEY');
-    newSettings = setKeyInSection(newSettings, 'llm-deepseek', 'reasoningEffort', effort);
-    if (catalogLines) newSettings = setBlockInSection(newSettings, 'llm-deepseek', 'models', catalogLines);
-  } else {
-    newSettings = setYamlSection(settingsText, 'llm-deepseek', [
-      `llm-deepseek:`,
-      `  baseURL: ${p.base_url}`,
-      `  apiKeyEnv: MMCAS_PROVIDER_KEY`,
-      `  reasoningEffort: ${effort}`,
-      ...(catalogLines || []),
-    ]);
-  }
-  // 2. agent-default-model 段（缺失时创建，避免新装环境切换后默认模型不生效）
-  if (newSettings.includes('agent-default-model:')) {
-    newSettings = setKeyInSection(newSettings, 'agent-default-model', 'provider', 'deepseek-official');
-    newSettings = setKeyInSection(newSettings, 'agent-default-model', 'model', chosenModel);
-  } else {
-    newSettings = newSettings.trimEnd() + '\nagent-default-model:\n  provider: deepseek-official\n  model: ' + chosenModel + '\n';
-  }
-  // 3. credentials refs
   let newCred = credText;
   if (/^refs:/m.test(newCred)) {
     newCred = setKeyInSection(newCred, 'refs', 'MMCAS_PROVIDER_KEY', p.api_key || 'sk-未填写');
@@ -251,17 +240,111 @@ if (cmd === 'switch') {
     newCred = newCred.trimEnd() + '\nrefs:\n  MMCAS_PROVIDER_KEY: ' + (p.api_key || 'sk-未填写') + '\n';
   }
 
+  const catalogLines = models.length > 0 ? buildCatalogLines(models) : null;
+  // settings.yaml 是 2 空格段；profile patch 的 config 下多缩进 2 空格。
+  const catalogLines4 = catalogLines ? catalogLines.map((line) => '  ' + line) : null;
+  const deepseekBlock = [
+    '- id: llm-deepseek',
+    "  name: '@deepseek-ai/dsh-llm-deepseek-api-key'",
+    '  config:',
+    `    baseURL: ${yamlScalar(p.base_url)}`,
+    '    apiKeyEnv: MMCAS_PROVIDER_KEY',
+    `    reasoningEffort: ${yamlScalar(effort)}`,
+    ...(catalogLines4 || []),
+  ].join('\n');
+  const agentBlock = [
+    '- id: agent-default-model',
+    "  name: '@deepseek-ai/dsh-agent-default-model'",
+    '  config:',
+    '    provider: deepseek-official',
+    `    model: ${yamlScalar(chosenModel)}`,
+  ].join('\n');
+
+  function applyToProfilePatch(text) {
+    let patch = text;
+    if (!getEntry(patch, 'llm-deepseek')) patch = upsertEntry(patch, 'llm-deepseek', deepseekBlock);
+    else {
+      patch = setEntryConfigScalars(patch, 'llm-deepseek', {
+        baseURL: p.base_url,
+        apiKeyEnv: 'MMCAS_PROVIDER_KEY',
+        reasoningEffort: effort,
+      });
+      if (catalogLines4) patch = setEntryConfigBlock(patch, 'llm-deepseek', 'models', catalogLines4);
+    }
+    if (!getEntry(patch, 'agent-default-model')) patch = upsertEntry(patch, 'agent-default-model', agentBlock);
+    else patch = setEntryConfigScalars(patch, 'agent-default-model', { provider: 'deepseek-official', model: chosenModel });
+    return patch;
+  }
+  function applyToLegacySettings(text) {
+    let out = text;
+    if (out.split('\n').some((line) => line.startsWith('llm-deepseek:'))) {
+      out = setKeyInSection(out, 'llm-deepseek', 'baseURL', p.base_url);
+      out = setKeyInSection(out, 'llm-deepseek', 'apiKeyEnv', 'MMCAS_PROVIDER_KEY');
+      out = setKeyInSection(out, 'llm-deepseek', 'reasoningEffort', effort);
+      if (catalogLines) out = setBlockInSection(out, 'llm-deepseek', 'models', catalogLines);
+    } else {
+      out = setYamlSection(out, 'llm-deepseek', [
+        'llm-deepseek:',
+        `  baseURL: ${p.base_url}`,
+        '  apiKeyEnv: MMCAS_PROVIDER_KEY',
+        `  reasoningEffort: ${effort}`,
+        ...(catalogLines || []),
+      ]);
+    }
+    if (out.includes('agent-default-model:')) {
+      out = setKeyInSection(out, 'agent-default-model', 'provider', 'deepseek-official');
+      out = setKeyInSection(out, 'agent-default-model', 'model', chosenModel);
+    } else {
+      out = out.trimEnd() + '\nagent-default-model:\n  provider: deepseek-official\n  model: ' + chosenModel + '\n';
+    }
+    return out;
+  }
+
+  const patches = [];
+  if (!legacyOnly) {
+    for (const profile of profileNames) {
+      const profileDir = path.join(dshHome, 'profiles', profile);
+      const manifestPath = path.join(profileDir, 'package.json');
+      if (!existsSync(manifestPath)) {
+        console.warn(`[mmcas] profile 不存在，跳过: ${profileDir}`);
+        continue;
+      }
+      ensureProfileScaffold(profileDir, { name: `dsh-profile-${profile}` });
+      const patchFile = path.join(profileDir, 'cordis.patch.yml');
+      const patch = applyToProfilePatch(readText(patchFile, '# MMCAS profile patch\n[]\n'));
+      patches.push({ profile, patchFile, patch });
+    }
+    if (!patches.length && !explicitSettings) {
+      console.error(`[mmcas] 没有可写的 profile（${profileNames.join(', ') || '空'}）；先运行 write-config 或指定 --dsh-home/--profiles`);
+      process.exit(2);
+    }
+  }
+
+  // 旧 settings.yaml 只在显式指定或已存在时同步，避免新装环境重新生成 legacy 文件。
+  const legacyText = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : (explicitSettings ? '' : null);
+  const legacyNew = legacyText !== null ? applyToLegacySettings(legacyText) : null;
+
   if (dryRun) {
-    console.log('--- dry-run: 将写入 settings.yaml ---');
-    console.log(newSettings);
+    for (const item of patches) {
+      console.log(`--- dry-run: ${item.profile} ${item.patchFile} ---`);
+      console.log(item.patch);
+    }
+    if (legacyNew !== null) {
+      console.log('--- dry-run: legacy settings.yaml（兼容同步） ---');
+      console.log(legacyNew);
+    }
     console.log('--- dry-run: 将写入 .credentials.yaml（key 已省略） ---');
     console.log(newCred.replace(/MMCAS_PROVIDER_KEY: .*/, 'MMCAS_PROVIDER_KEY: <hidden>'));
   } else {
-    mkdirSync(path.dirname(settingsPath), { recursive: true });
+    for (const item of patches) writeText(item.patchFile, item.patch);
+    if (legacyNew !== null) {
+      mkdirSync(path.dirname(settingsPath), { recursive: true });
+      writeFileSync(settingsPath, legacyNew);
+    }
     mkdirSync(path.dirname(credPath), { recursive: true });
-    writeFileSync(settingsPath, newSettings);
     writeFileSync(credPath, newCred);
-    console.log(`[mmcas] 已切换到 ${p.name}（${p.base_url}），dsh 下一请求即生效`);
+    const targets = patches.length ? patches.map((x) => x.profile).join(', ') : 'legacy settings.yaml';
+    console.log(`[mmcas] 已切换到 ${p.name}（${p.base_url}），写入 ${targets}；dsh 重载/重启后生效`);
   }
   process.exit(0);
 }

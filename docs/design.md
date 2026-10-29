@@ -120,7 +120,7 @@ git 保底：冲突永不静默丢失，冲突文件由人类裁决。
 ### 5.1 包结构（开发仓 packages/ 下）
 
 - `packages/core`（共享）：同步守护、provider 管理、任务卡插件、记忆插件（槽位）、A2A（槽位）、SSH 工具、**审计工具链（v1.2）**、**notices CLI（v1.2）**。
-- role 层（互不相同）：role.md（人格；装机时注入 dsh——0.2.0 起 = system-prompt.personaPrefix + preset-standard persona 覆盖）、skills/、tools 白名单、模型配置。
+- role 层（互不相同）：role.md（人格；装机时注入 dsh——0.2.x 起 = system-prompt.personaPrefix + preset-standard persona 覆盖）、skills/、tools 白名单、模型配置。
   - `packages/modeler`（Master）：数学建模知识库、文献、建模方法论。
   - `packages/coder`：数值计算、优化求解、并行/长任务队列、可视化。
   - `packages/writer`：论文写作、图表规范、排版。
@@ -130,8 +130,8 @@ git 保底：冲突永不静默丢失，冲突文件由人类裁决。
 队友计算机能力不强，**不注册任何外部服务**（无 GitHub/Tailscale 账号）：
 
 - **git**：PortableGit 便携版塞包（免安装）。仓库访问用部署者预生成的细粒度 PAT / deploy key（每队友一把、限单仓、可吊销），git author 署名各自角色。队友全程无感知。
-- **Tailscale**：部署者后台预生成 auth key（设过期时间 + tag），包内脚本 `tailscale up --authkey=tskey-xxx` 自动上线。设备归入部署者 tailnet；ACL 即互控开关，写死 Slave 不可 SSH Master。
-- **运行环境**：Node 便携 + pnpm + dsh（版本锁定 0.2.0-rc.2）+ uv（Windows 单文件），全部随包（vendor 四件套）。
+- **Tailscale**：部署者后台预生成 auth key（设过期时间 + tag），包内脚本 `tailscale up --authkey=tskey-<one-time-key>` 自动上线。设备归入部署者 tailnet；ACL 即互控开关，写死 Slave 不可 SSH Master。
+- **运行环境**：Node 便携 + pnpm + dsh（版本锁定 0.2.1-rc.3）+ uv（Windows 单文件），全部随包（vendor 四件套）。
 - **API 多源**：见 §5.5。
 
 ### 5.3 分发与升级
@@ -139,7 +139,7 @@ git 保底：冲突永不静默丢失，冲突文件由人类裁决。
 - 首次交付：单个 zip → 网盘分享 / 群文件。
 - 升级：**工作区内容**由同步守护自动 git pull；**包本体**（脚本/插件）更新需重新分发 zip 或由 Master 远程替换（sync-daemon 只同步工作区仓，不含包源码）。
 - 运维：Master 经 Tailscale SSH 远程诊断修复（控制通道即运维通道）。
-- 版本纪律：三端 dsh 版本锁定 0.2.0-rc.2——**升级 dsh 时须重跑 poller / 压缩 / 面板回归**（预览期破坏性变更频繁；0.2.0 起 agent 平面迁至 agent preset，MMCAS 以同 id 覆盖 preset-standard 注入 Role）。
+- 版本纪律：三端 dsh 版本锁定 0.2.1-rc.3——**升级 dsh 时须重跑 poller / 压缩 / 面板回归**（预览期破坏性变更频繁；0.2.x 起 agent 平面迁至 agent preset，MMCAS 以同 id 覆盖 preset-standard 注入 Role）。
 
 ### 5.4 设备确认
 
@@ -168,14 +168,14 @@ default: deepseek
 - 切换实现：pkg-core 面板把选中 provider 写入 dsh 的 credentials/settings 配置并提示重载会话（dsh 多 provider 的实际机制在开发期实测验证）。
 - 每位成员的 key 由部署者统一创建分配（可单独吊销），或留空由 UI 填入。
 
-**本机实测结论**（dsh 0.2.0-rc.2，读 `dsh-llm-deepseek` 包 README）：
+**本机实测结论**（dsh 0.2.1-rc.3，读 `dsh-llm-deepseek` 包 README）：
 
 - 官方适配器 `dsh-llm-deepseek` 支持 `baseURL` 覆写（"optionally behind an OpenAI-compatible gateway named by baseURL"）→ **中转站（OpenAI 兼容网关）直接可用**。
 - 凭证走 `apiKeyEnv`（credentials seam：`~/.dsh/.credentials.yaml` refs 映射，或环境变量），per-request resolve。
 - settings 文档的 `llm-deepseek:` 段可覆盖任意字段，**无需重启**（"changes the next request without a restart"）。
 - `dsh-llm-pi-ai` 适配器支持挂载更多 provider 路由（各家官方 API），与 DeepSeek 适配器并存（路由名不冲突，deepseek-official 重复注册会 DUPLICATE_ADAPTER）。
 
-落地方式（实测）：MMCAS 切换器 = providers.yaml 选中项 → 写 `~/.dsh/settings.yaml` 的 `llm-deepseek:` 段（baseURL/apiKeyEnv/reasoningEffort + models 目录，catalog 由 providers.yaml 的 models 生成，供 UI 模型选择器展示）+ credentials refs + `agent-default-model`（`--model` 可选指定，缺省取 models 首项）。已实测：临时 DSH_HOME 从零生成配置 → dsh headless 冒烟通过。
+落地方式（实测）：MMCAS 切换器 = providers.yaml 选中项 → 写活动 profile 的 `cordis.patch.yml`（`llm-deepseek:` 条目的 baseURL/apiKeyEnv/reasoningEffort + models 目录，catalog 由 providers.yaml 的 models 生成，供 UI 模型选择器展示）+ credentials refs + `agent-default-model`（`--model` 可选指定，缺省取 models 首项）。dsh 0.2.x 的 `settings.yaml` 只做一次性导入兼容；已实测：临时 DSH_HOME 从零生成配置 → dsh headless 冒烟通过。
 
 **出厂默认（v1.2）**：`switch-provider.mjs` 生成 catalog 时默认携带 `inputModalities`（含 imagePixelBudget/imageMaxBytes，参数化）——**视觉能力开箱可用**（实战实证：`read_image` 是刚需，缺省声明会在本地门禁被拒）；`reasoningEffort` 按角色默认（coder=max / writer=high / modeler=high，可覆盖）。
 
@@ -189,6 +189,13 @@ default: deepseek
 - 队友端依赖：codex CLI（setup.bat 用便携 node 的 npm 安装）+ 代理。**codex CLI 自动读 Windows 系统代理**（实测：系统代理开启时零配置可调用），故队友开着代理客户端（系统代理开关/TUN）即**无需任何额外配置**；仅代理不走系统代理时才需写包内 `config/proxy.txt`。
 - 工具桥（v2.6）：桥接支持工具调用——请求带 tools[] 时把 schema 渲染进 prompt，模型以 `tool_call` 文本块表达调用，桥转 Responses function_call；dsh 执行后回传继续。含三段式提醒 + few-shot + 反编造规则 + 自动纠错重试；「内层沙箱拒绝」被标注为预期噪音（忽略、勿报告）。排查口诀：`Connection error.` = 桥没跑；`stream ended before a terminal response event` = baseURL 被改回直连。
 
+### 5.6 桌面端（dsh Electron）
+
+- 官方桌面端运行时自带 dsh（0.2.1-rc.3），profile 固定为 `profiles/desktop`，页面 origin 为 `dsh-app://app`，宿主端口为随机（`--port 0`）。
+- MMCAS 的 `write-config` 在 MMCAS 独立 `DSH_HOME` 下生成 `profiles/desktop`，并把 `mmcas-panel.port` 固定为 19398；桌面端必须通过 `MMCAS-Desktop` / `start-desktop.bat` 启动（设置 `DSH_HOME=%LOCALAPPDATA%\mmcas\dsh-home`）。
+- 不要用 `dsh --profile desktop` / `dsh plugin --profile desktop` 管理该 profile：0.2.1 起 CLI 明确拒绝，profile 由 Electron 独占管理。
+- 若桌面端已在运行，先完全退出再启动，避免沿用默认 `~/.dsh` 或旧 profile。
+
 ## 6. 记忆后端（v1 已落地）
 
 - 已实现：append-only 文件流（memory/<role>/，memory-log/memory-search 工具 + 词匹配检索）+ 三副本 git 同步并集合并。
@@ -197,7 +204,7 @@ default: deepseek
 
 ## 7. 总控面板（v6 = dsh 内嵌插件 @mmcas/dsh-panel，合并版）
 
-- 定位：dsh 侧栏内嵌抽屉，**不是独立服务**；数据走 host 插件回环 HTTP 127.0.0.1:3210（端口可配，web 端口 +11 约定）。
+- 定位：dsh 侧栏内嵌抽屉，**不是独立服务**；数据走 host 插件回环 HTTP（web：127.0.0.1:3210，端口可配，web 端口 +11 约定；桌面端：固定 19398，dsh-app:// 无端口）。
 - **按钮（三端一致）**：总控 / 任务看板 / 共享记忆 / **审计室**。
 - **总控抽屉**：同步水位 + 成员设备 + **上下文水位**（v1.2）+ **消息区（notices）**（v1.2）+ 环境同步区 + 操控门户（仅 Master）。
 - **任务看板**：三列板（priority 排序）+ 新建/编辑/详情（DAG 门控 + 权限护栏）+ **30s 自动 git 同步**（fetch → 落后则 merge（快进优先）→ 领先则 push；单飞——定时器与 HTTP 共用一次同步；默认不 add/commit 以免与守护抢锁；冲突/失败显式上报）+「刷新」「立即同步」按钮 + WIP 计数显示（限制可配，默认不限）。
@@ -210,7 +217,7 @@ default: deepseek
 - **上下文水位**：`/api/state` 暴露 token-meter 读数（各端最近会话），接近阈值警示（§12.4）。
 - **审计室**（三端）：选维度 → 选材料 → 调本地桥 → 报告 + 通知（§14）。
 - 既述能力：记忆浏览 ✅、设备状态 ✅、provider 切换 UI ✗（用 CLI 切换器，UI 后置）、权限审批 UI ✗、SSH 控制台 ◐（Master 操控门户 /api/exec，非完整 WebTTY）。
-- 工程约束（多实例并存）：host 数据服务端口必须可配 + EADDRINUSE 防御；client 端 API base 从页面端口推导（3199→3210、3200→3211，其余一律 3210）；演示/对比用 `--patch` 双实例（同 id 覆盖整份 config，须写全字段）。
+- 工程约束（多实例并存）：host 数据服务端口必须可配 + EADDRINUSE 防御；client 端 API base 从页面端口推导（3199→3210、3200→3211，其余一律 3210；桌面端 dsh-app:// 固定 19398）；演示/对比用 `--patch` 双实例（同 id 覆盖整份 config，须写全字段）。
 
 ## 8. AutoMM 复用清单
 
@@ -258,7 +265,7 @@ default: deepseek
 
 - 远端仓库平台：**已定 GitHub 私有仓**（git 走 ssh.github.com:443）。仓库地址配置在 `%LOCALAPPDATA%\mmcas\workspace-repo.txt`（pack 时写入包内 config/），**不硬编码在脚本里**；Gitee 仅作网络不稳时的备选。
 - 人类沟通渠道：即时通讯工具（系统不接管）。
-- 待观察：dsh 预览期变动（锁定 0.2.0-rc.2，升级时重跑 poller/压缩/面板回归）；极端单卡上下文（压缩之外由水位守门 + 交接纪律兜底）；notices 常态时延（秒级～分钟级，紧急走 steer）。
+- 待观察：dsh 预览期变动（锁定 0.2.1-rc.3，升级时重跑 poller/压缩/面板回归）；极端单卡上下文（压缩之外由水位守门 + 交接纪律兜底）；notices 常态时延（秒级～分钟级，紧急走 steer）。
 - 上游反馈包（不与本仓混）：dsh 沙箱子进程间歇 `Access is denied` / 管道不可用（实战高频痛点，样本可提取）；单独整理。
 
 ## 11. 隐私与开源纪律
@@ -273,7 +280,7 @@ default: deepseek
 
 ### 12.1 上下文压缩（compaction 三件套）
 
-dsh 自带压缩三件套（`compaction-basic` + `command-compact` + `tool-result-pruner`），常规随 agent preset 挂载。0.1.x 时代 MMCAS 为保住 persona 禁用 presets，**连带把压缩全部关掉**（实战暴露：长任务撞上下文上限，多会话静默失败），v1.2 改为在 profile patch 显式重挂。**0.2.0 更新**：agent 平面（含压缩）整体归 agent preset，MMCAS 不再禁用 preset，改为同 id 覆盖 `preset-standard`——persona 前缀 = Role 文档，压缩三件套随 preset 挂载；下面这组 v1.2 参数保留在覆盖的 `compaction` 组内（模板块见 `packages/core/standard-preset-020.yml`）：
+dsh 自带压缩三件套（`compaction-basic` + `command-compact` + `tool-result-pruner`），常规随 agent preset 挂载。0.1.x 时代 MMCAS 为保住 persona 禁用 presets，**连带把压缩全部关掉**（实战暴露：长任务撞上下文上限，多会话静默失败），v1.2 改为在 profile patch 显式重挂。**0.2.x 更新**：agent 平面（含压缩）整体归 agent preset，MMCAS 不再禁用 preset，改为同 id 覆盖 `preset-standard`——persona 前缀 = Role 文档，压缩三件套随 preset 挂载；下面这组 v1.2 参数保留在覆盖的 `compaction` 组内（模板块见 `packages/core/standard-preset-021.yml`）：
 
 ```yaml
 - id: compaction-basic
@@ -288,7 +295,7 @@ dsh 自带压缩三件套（`compaction-basic` + `command-compact` + `tool-resul
   config: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 }
 ```
 
-参数落点：master profile patch 的 preset 覆盖、write-config 生成的队友 profile patch（同一模板块）与 `standard-preset-020.yml` 本体。验证：长会话压测（自动压缩触发 + `/compact` + 溢出恢复）+ 压缩后接续工作不断链。
+参数落点：master profile patch 的 preset 覆盖、write-config 生成的队友 profile patch（同一模板块）与 `standard-preset-021.yml` 本体。验证：长会话压测（自动压缩触发 + `/compact` + 溢出恢复）+ 压缩后接续工作不断链。
 
 ### 12.2 新卡开新会话（替代"单会话吸尘器"）
 

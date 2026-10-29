@@ -6,30 +6,35 @@
  * 直连会被拦截。故以真实 codex CLI 为通道，经本地 codex-bridge 服务
  * 暴露 OpenAI Responses 端点，供 dsh 的 pi-ai 适配器使用。
  *
- * 本脚本写四份配置：
+ * 本脚本写：
  *   1. <mmcas-home>/codex-home/auth.json     Codex CLI 凭据（PackyAPI key）
  *   2. <mmcas-home>/codex-home/config.toml   Codex CLI provider 指向 cf.api.fan
  *   3. <mmcas-home>/codex-bridge.json        桥接服务配置
- *   4. <dsh-home>/settings.yaml              llm-pi-ai 段（保留其他段）
+ *   4. <dsh-home>/profiles/<profile>/cordis.patch.yml  llm-pi-ai 条目（保留其他条目）
  *   5. <dsh-home>/.credentials.yaml          MMCAS_CODEXBRIDGE_KEY 引用
+ *   - 旧 home 存在 settings.yaml 时同步 llm-pi-ai 段（dsh 一次性导入兼容）
  *
- * 用法：
+ * 用法:
  *   node install-bridge.mjs --key-file <packy-key.txt> [选项]
  *
- * 选项：
- *   --key-file <path>   PackyAPI key 文件（一行）；也可用 --key 直接给
+ * 选项:
+ *   --key-file <path>   PackyAPI key 文件（一行）；也可用 --key 直接传
  *   --key <value>       直接指定 key（不推荐，命令行会留痕）
  *   --dsh-home <path>   dsh home（默认 %LOCALAPPDATA%\mmcas\dsh-home）
  *   --mmcas-home <path> MMCAS 数据目录（默认 %LOCALAPPDATA%\mmcas）
+ *   --profile <name>    单个 profile（默认 web）
+ *   --profiles <a,b>    多个 profile（setup 用 web,desktop）
  *   --port <n>          桥接端口（默认 3220）
  *   --proxy <url>       HTTPS 代理（如 http://127.0.0.1:7897；留空则直连）
  *   --base-url <url>    Codex 上游（默认 https://cf.api.fan/v1）
  *   --models a,b        模型 id 列表（默认 gpt-5.6-sol,gpt-5.6-terra）
  *   --dry-run           只打印将要写入的内容，不落盘
  */
+
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { upsertEntry, readText, writeText, ensureProfileScaffold } from '../profile-patch.mjs';
 
 function arg(name, def) {
   const i = process.argv.indexOf(`--${name}`);
@@ -38,6 +43,8 @@ function arg(name, def) {
 
 const KEY_FILE = arg('key-file', '');
 const DSH_HOME = arg('dsh-home', path.join(process.env.LOCALAPPDATA || os.homedir(), 'mmcas', 'dsh-home'));
+const PROFILES = String(arg('profiles', arg('profile', process.env.MMCAS_DSH_PROFILE || 'web')))
+  .split(',').map((s) => s.trim()).filter(Boolean);
 const MMCAS_HOME = arg('mmcas-home', path.join(process.env.LOCALAPPDATA || os.homedir(), 'mmcas'));
 const PORT = Number(arg('port', '3220'));
 const PROXY = arg('proxy', '');
@@ -170,12 +177,39 @@ const piAiLines = [
 
 const settingsPath = path.join(DSH_HOME, 'settings.yaml');
 const credPath = path.join(DSH_HOME, '.credentials.yaml');
+// profile patch 条目：settings.yaml 的 llm-pi-ai 段整体下移 2 空格作为 config。
+const piAiBlock = [
+  '- id: llm-pi-ai',
+  "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+  '  config:',
+  ...piAiLines.slice(1).map((line) => '  ' + line),
+].join('\n');
+
+const profilePatches = [];
+for (const profile of PROFILES) {
+  const profileDir = path.join(DSH_HOME, 'profiles', profile);
+  if (!existsSync(path.join(profileDir, 'package.json'))) {
+    console.warn(`[install-bridge] profile 不存在，跳过: ${profileDir}`);
+    continue;
+  }
+  ensureProfileScaffold(profileDir, { name: `dsh-profile-${profile}` });
+  const patchFile = path.join(profileDir, 'cordis.patch.yml');
+  const patch = upsertEntry(readText(patchFile, '# MMCAS profile patch\n[]\n'), 'llm-pi-ai', piAiBlock);
+  profilePatches.push({ profile, patchFile, patch });
+}
+
+// 兼容旧 home：settings.yaml 存在时同步更新（新装环境不再创建 legacy 文件）。
+const legacyText = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : (profilePatches.length ? null : '');
+const legacyNew = legacyText !== null ? setYamlSection(legacyText, 'llm-pi-ai', piAiLines) : null;
 
 if (DRY) {
   console.log('--- codex-home/auth.json ---\n' + authJson.replace(/"sk-[^"]+"/, '"sk-***"'));
   console.log('--- codex-home/config.toml ---\n' + configToml);
   console.log('--- codex-bridge.json ---\n' + bridgeJson);
-  console.log('--- settings.yaml 追加段 ---\n' + piAiLines.join('\n'));
+  for (const item of profilePatches) {
+    console.log(`--- ${item.profile} ${item.patchFile} ---\n` + item.patch);
+  }
+  if (legacyNew !== null) console.log('--- settings.yaml 追加段（legacy 兼容） ---\n' + legacyNew);
   console.log('--- .credentials.yaml 追加 ---\nrefs:\n  MMCAS_CODEXBRIDGE_KEY: dummy-bridge-token');
   process.exit(0);
 }
@@ -189,9 +223,8 @@ writeFileSync(path.join(codexHome, 'auth.json'), authJson, 'utf8');
 writeFileSync(path.join(codexHome, 'config.toml'), configToml, 'utf8');
 writeFileSync(path.join(MMCAS_HOME, 'codex-bridge.json'), bridgeJson, 'utf8');
 
-const settingsText = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : '';
-const newSettings = setYamlSection(settingsText, 'llm-pi-ai', piAiLines);
-writeFileSync(settingsPath, newSettings, 'utf8');
+for (const item of profilePatches) writeText(item.patchFile, item.patch);
+if (legacyNew !== null) writeFileSync(settingsPath, legacyNew, 'utf8');
 
 const credText = existsSync(credPath) ? readFileSync(credPath, 'utf8') : 'version: 1\nrefs:\n';
 const newCred = ensureKeyInRefs(credText, 'MMCAS_CODEXBRIDGE_KEY', 'dummy-bridge-token');
@@ -201,7 +234,11 @@ console.log('[install-bridge] 已写入：');
 console.log(`  ${path.join(codexHome, 'auth.json')}`);
 console.log(`  ${path.join(codexHome, 'config.toml')}`);
 console.log(`  ${path.join(MMCAS_HOME, 'codex-bridge.json')}`);
-console.log(`  ${settingsPath}（llm-pi-ai 段）`);
+if (profilePatches.length) {
+  for (const item of profilePatches) console.log(`  ${item.patchFile}（llm-pi-ai）`);
+} else {
+  console.log(`  ${settingsPath}（llm-pi-ai 段，legacy）`);
+}
 console.log(`  ${credPath}（MMCAS_CODEXBRIDGE_KEY）`);
 console.log(`[install-bridge] 模型：${MODELS.join(', ')} | 端口：${PORT} | 代理：${PROXY || '（直连）'}`);
 console.log('[install-bridge] 下一步：启动 codex-bridge（start-bridge.bat），再启动 dsh。');

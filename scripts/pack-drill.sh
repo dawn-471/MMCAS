@@ -30,16 +30,17 @@ node "$PK/pkg/core/write-config.mjs" --role "$ROLE" --base "$PK" --dsh-home "$DS
 test -f "$PK/config/sync.config.json" && echo "  OK sync.config.json"
 test -f "$PK/config/providers.yaml" && echo "  OK providers.yaml"
 test -f "$DSH/profiles/web/cordis.patch.yml" && echo "  OK dsh web profile patch"
+test -f "$DSH/profiles/desktop/cordis.patch.yml" && echo "  OK dsh desktop profile patch"
 test -d "$DSH/skills" && echo "  OK skills 目录"
-test -f "$DSH/profiles/mmcas-$ROLE/cordis.patch.yml" && echo "  OK 角色 profile patch" || ls "$DSH/profiles/" 2>/dev/null
+test -f "$DSH/profiles/web/cordis.patch.yml" && grep -q "mmcas-panel" "$DSH/profiles/web/cordis.patch.yml" && echo "  OK 面板/角色 profile patch" || ls "$DSH/profiles/" 2>/dev/null
 
 echo "== [5/6] switch-provider 隔离演练（dry-run） =="
-node "$PK/pkg/core/switch-provider.mjs" switch deepseek --config "$PK/config/providers.yaml" --settings "$DSH/settings.yaml" --credentials "$DSH/.credentials.yaml" --role "$ROLE" --dry-run 2>&1 | head -14
+node "$PK/pkg/core/switch-provider.mjs" switch deepseek --config "$PK/config/providers.yaml" --dsh-home "$DSH" --profiles web,desktop --credentials "$DSH/.credentials.yaml" --role "$ROLE" --dry-run 2>&1 | head -14
 
 echo "== [6/6] audit dry-run =="
 mkdir -p "$PKR/ws/workspace/modeling"
 echo "# 演练材料" > "$PKR/ws/workspace/modeling/m1.md"
-node "$PK/pkg/core/audit/audit-run.mjs" --dimension model --workspace "$PKR/ws" --dry-run 2>&1 | tail -1
+node "$PK/pkg/core/audit/audit-run.mjs" --dimension model --workspace "$PKR/ws" --dsh-home "$DSH" --reviewer-config "$PKR/reviewer.json" --dry-run 2>&1 | tail -1
 
 echo ""
 echo "== 演练完成（隔离目录: $PKR） =="

@@ -83,6 +83,8 @@ bash scripts/download-vendor.sh
 
 成员机：解压 zip → 双击 `setup.bat`（约 9 步全自动，失败自动汇总提示）→ 日常双击桌面 `MMCAS-Agent` 打开助手页面。
 
+> 桌面端：如已安装官方 DeepSeek Harness Desktop，`setup.bat` 会额外生成 `MMCAS-Desktop` 快捷方式（独立 DSH_HOME + 面板端口 19398）；桌面端运行中请先完全退出，再启动/重跑配置。
+
 > 打包假定部署者已准备本机凭据配置（**全部外置、仓库零明文**——所有凭证位置与处理方式见 `docs/secrets-registry.md` 模板；成员机凭据由部署者预生成注入）。
 
 ## 文档

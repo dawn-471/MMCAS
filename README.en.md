@@ -79,6 +79,8 @@ bash scripts/download-vendor.sh
 
 On a member machine: unzip the bundle → double-click `setup.bat` (≈9 fully automated steps, failures summarized) → daily use via the `MMCAS-Agent` desktop shortcut.
 
+> Desktop: if the official DeepSeek Harness Desktop is installed, `setup.bat` also creates a `MMCAS-Desktop` shortcut (isolated DSH_HOME + panel port 19398). Fully quit the desktop app before launching or re-running configuration.
+
 > Packing assumes the deployer has prepared local credential config (**all external, zero plaintext in the repo** — see the template in `docs/secrets-registry.md`; member credentials are pre-generated and injected by the deployer).
 
 ## Docs

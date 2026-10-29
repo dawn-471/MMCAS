@@ -114,6 +114,23 @@ console.log('\n[T7/T8] show-config：settings 读取 + key 检出 + CLI 优先�
   const r8 = spawnSync(process.execPath, [CLI, '--show-config', '--dsh-home', dshT, '--model', 'cli-model'], { encoding: 'utf8' });
   let j8 = null; try { j8 = JSON.parse(r8.stdout); } catch {}
   check('T8 CLI > settings', j8 && j8.model === 'cli-model' && j8.source === 'cli', JSON.stringify(j8));
+
+  // 新路径：MMCAS reviewer.json 优先于 legacy settings.yaml
+  const cfgFile = path.join(ROOT, 'reviewer.json');
+  writeFileSync(cfgFile, JSON.stringify({ version: 1, endpoint: 'http://127.0.0.1:3998/v1/chat/completions', model: 'json-model', protocol: 'chat', maxFeeCny: 11, apiKeyEnv: 'JSON_KEY' }, null, 2) + '\n');
+  writeFileSync(path.join(dshT, '.credentials.yaml'), 'version: 1\nrefs:\n  TEST_KEY: sk-test-abc123\n  JSON_KEY: sk-json-xyz\n');
+  const r7b = spawnSync(process.execPath, [CLI, '--show-config', '--dsh-home', dshT, '--reviewer-config', cfgFile], { encoding: 'utf8' });
+  let j7b = null; try { j7b = JSON.parse(r7b.stdout); } catch {}
+  check('T7b reviewer.json 读取 + key 检出 + source', j7b && j7b.endpoint.includes('3998') && j7b.model === 'json-model' && j7b.protocol === 'chat' && j7b.hasKey === true && j7b.source === 'reviewer.json' && !r7b.stdout.includes('sk-json-xyz'), JSON.stringify(j7b));
+
+  // dsh 0.2.x 导入后 settings.yaml 被改名 .imported：仍能只读恢复 reviewer 段
+  const dshImported = path.join(ROOT, 'dsh-imported');
+  mkdirSync(dshImported, { recursive: true });
+  writeFileSync(path.join(dshImported, 'settings.yaml.imported'), 'reviewer:\n  endpoint: http://127.0.0.1:3997/v1/responses\n  model: imported-model\n  protocol: responses\n  maxFeeCny: 12\n  apiKeyEnv: IMP_KEY\n');
+  writeFileSync(path.join(dshImported, '.credentials.yaml'), 'version: 1\nrefs:\n  IMP_KEY: sk-imp-123\n');
+  const r7c = spawnSync(process.execPath, [CLI, '--show-config', '--dsh-home', dshImported], { encoding: 'utf8' });
+  let j7c = null; try { j7c = JSON.parse(r7c.stdout); } catch {}
+  check('T7c settings.yaml.imported 只读回退', j7c && j7c.endpoint.includes('3997') && j7c.model === 'imported-model' && j7c.hasKey === true && j7c.source === 'settings.imported', JSON.stringify(j7c));
 }
 
 console.log('\n[T9] --note 注入');
@@ -146,8 +163,11 @@ console.log('\n[T10/T11] 双协议 mock 全链（chat + responses）');
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const port = srv.address().port;
   const outT = path.join(ROOT, 'out');
-  const r10 = await runAsync(['--dimension', 'model', '--workspace', ws, '--paths', 'workspace/modeling/m2.md', '--endpoint', `http://127.0.0.1:${port}/v1/chat/completions`, '--protocol', 'chat', '--model', 'mock-chat', '--out', outT]);
-  const r11 = await runAsync(['--dimension', 'model', '--workspace', ws, '--paths', 'workspace/modeling/m2.md', '--endpoint', `http://127.0.0.1:${port}/v1/responses`, '--model', 'mock-resp', '--out', outT]);
+  const isoHome = path.join(ROOT, 'iso-home');
+  mkdirSync(isoHome, { recursive: true });
+  const isoReviewer = path.join(ROOT, 'iso-reviewer.json');
+  const r10 = await runAsync(['--dimension', 'model', '--workspace', ws, '--paths', 'workspace/modeling/m2.md', '--dsh-home', isoHome, '--reviewer-config', isoReviewer, '--endpoint', `http://127.0.0.1:${port}/v1/chat/completions`, '--protocol', 'chat', '--model', 'mock-chat', '--out', outT]);
+  const r11 = await runAsync(['--dimension', 'model', '--workspace', ws, '--paths', 'workspace/modeling/m2.md', '--dsh-home', isoHome, '--reviewer-config', isoReviewer, '--endpoint', `http://127.0.0.1:${port}/v1/responses`, '--protocol', 'responses', '--model', 'mock-resp', '--out', outT]);
   srv.close();
   check('T10 chat 全链 ok + 报告含 mock 文本', r10.code === 0 && r10.res && r10.res.ok && r10.res.protocol === 'chat', JSON.stringify(r10.res).slice(0, 200));
   if (r10.res && r10.res.reportPath) {

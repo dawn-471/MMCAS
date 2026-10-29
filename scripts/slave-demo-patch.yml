@@ -1,7 +1,7 @@
-# 演示用 Slave patch 模板（dsh 0.2.0 适配版）：使用前把 {WORKSPACE} / {CORE} 替换为实际路径。
+# 演示用 Slave patch 模板（dsh 0.2.1 适配版）：使用前把 {WORKSPACE} / {CORE} 替换为实际路径。
 # 用法：同机第二实例 `dsh --profile mmcas-modeler --patch slave-demo-patch.yml --no-open`
 #（web 端口 3200、面板数据端 3211；与主实例 3199/3210 并存）。
-# 0.2.0：agent 平面（工具/人格/压缩）随 preset-standard 覆盖（persona = coder Role）；
+# 0.2.x：agent 平面（工具/人格/压缩）随 preset-standard 覆盖（persona = coder Role）；
 # 旧的 host 层逐条启用行（subagent/工具/压缩）已删除——由 preset 接管。
 
 - id: system-prompt
@@ -136,6 +136,8 @@
         name: '@deepseek-ai/dsh-agent-instructions'
         config:
           maxBytes: 65536
+      - id: time-context
+        name: '@deepseek-ai/dsh-time-context'
       - id: tool-bash
         name: '@deepseek-ai/dsh-tool-bash'
         disabled: !!js process.platform === 'win32'
@@ -150,6 +152,8 @@
           sampleOverCapGlobResults: false
       - id: tool-jobs
         name: '@deepseek-ai/dsh-tool-jobs'
+      - id: tool-schedule
+        name: '@deepseek-ai/dsh-tool-schedule'
       - id: skill-filesystem
         name: '@deepseek-ai/dsh-skill-filesystem'
       - id: tool-skill
@@ -168,11 +172,11 @@
             name: '@deepseek-ai/dsh-plan-mode'
             config:
               section: |
-                You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+                You are in plan mode. Stay in plan mode until the user approves your plan through exit_plan_mode or switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
 
                 Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
 
-                The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+                The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed only to keep the request shape stable. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
 
                 Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
 
@@ -215,41 +219,17 @@
               provider: spawn
               toolName: subagent
               modelSelectionSettings: true
-              backgroundMode: continuable
           - id: tool-subagent-fork
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
               provider: fork
               toolName: subagent_fork
-              backgroundMode: continuable
-          - id: tool-subagent-codex
-            name: '@deepseek-ai/dsh-tool-subagent'
-            disabled: true
-            config:
-              provider: codex
-              toolName: subagent_codex
-              backgroundMode: one-shot
-              maxDepth: provider-managed
-          - id: tool-subagent-claude-code
-            name: '@deepseek-ai/dsh-tool-subagent'
-            disabled: true
-            config:
-              provider: claude-code
-              toolName: subagent_claude_code
-              backgroundMode: one-shot
-              maxDepth: provider-managed
           - id: workflow-ptc
             name: '@deepseek-ai/dsh-workflow-ptc'
             config:
               provider: spawn
           - id: tool-workflow
             name: '@deepseek-ai/dsh-tool-workflow'
-          - id: tool-ralph
-            name: '@deepseek-ai/dsh-tool-ralph'
-            disabled: true
-            config:
-              subagentProvider: spawn
-              maxRounds: 64
       - id: tool-ask-user
         name: '@deepseek-ai/dsh-tool-ask-user'
       - id: tool-todo
@@ -265,4 +245,7 @@
         name: '@deepseek-ai/dsh-tool-present'
       - id: tool-plugin-manager
         name: '@deepseek-ai/dsh-plugin-manager/tools'
+        disabled: true
+      - id: tool-plugin-market
+        name: '@deepseek-ai/dsh-plugin-market/tools'
         disabled: true

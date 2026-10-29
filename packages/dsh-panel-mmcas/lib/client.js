@@ -72,7 +72,7 @@ window.__ModuleLoader__.load({
     // 看板/总控/记忆统一 30 秒一刷；刷新的数据源是宿主 /api/refresh —— 它先与 git 远端对齐
     // （coder、writer 端 push 的卡变更由此进来），再回最新的卡与同步水位
     var REFRESH_MS = 30000;
-    // 数据端点（0.2.0 双端适配）：window.__MMCAS_API__ 最高优先。
+    // 数据端点（0.2.1 双端适配）：window.__MMCAS_API__ 最高优先。
     // 桌面端（dsh-app://，无端口）：固定 19398（须与 profile patch 的 mmcas-panel.port 一致）；
     // web 端：端口约定 = web 端口 + 11（3199→3210、3200→3211），队友端默认 3080 → 3210。
     var API = "http://127.0.0.1:3210";
@@ -638,7 +638,7 @@ window.__ModuleLoader__.load({
           el("div", { className: "mmcas-row" },
             el("button", { className: "mmcas-btn-primary", onClick: saveCfg }, "保存配置"),
             el("button", { className: "mmcas-btn-mini", onClick: function () { setEdit({ endpoint: cfg.endpoint, model: cfg.model, protocol: cfg.protocol, maxFeeCny: cfg.maxFeeCny, apiKeyEnv: cfg.apiKeyEnv, apiKey: "" }); } }, "重置表单")),
-          el("div", { className: "mmcas-empty" }, "写入 dsh settings.yaml 的 reviewer 段（key 存 .credentials.yaml）。默认通道为本地桥（3220）；换别家专家模型：改 endpoint + model（+key）即可。")
+          el("div", { className: "mmcas-empty" }, "写入 MMCAS reviewer.json（key 存 dsh .credentials.yaml）。默认通道为本地桥（3220）；换别家专家模型：改 endpoint + model（+key）即可。旧 settings.yaml 的 reviewer 段会自动只读兼容。")
         ) : null,
         el("div", { className: "mmcas-sec" }, "发起审阅"),
         el("div", { className: "mmcas-row" },
@@ -760,13 +760,21 @@ window.__ModuleLoader__.load({
       function openPanel(k) { setPanel(panel === k ? null : k); }
 
       useEffect(function () {
-        // 把按钮组移动到 New Session 按钮下方
+        // 把按钮组移动到 New Session 按钮下方。
+        // dsh 0.2.1+ 的按钮文案会跟随 locale，且 CSS Module 类名带 hash；
+        // 因此同时用多语言文案和 `_newSession` 类名后缀匹配，找不到就留在 footer slot。
+        var NEW_SESSION_TEXT = /^(new session|new conversation|新建会话|新建对话|新会话)$/i;
+        function isNewSessionButton(b) {
+          if (!b || b.getAttribute("data-mmcas-btns") !== null) return false;
+          var text = String(b.textContent || "").replace(/\s+/g, " ").trim();
+          if (NEW_SESSION_TEXT.test(text)) return true;
+          var cls = String(b.className || "");
+          return /(^|[\s_-])newSession($|[\s_-])/.test(cls);
+        }
         function relocate() {
           var wrap = document.querySelector("[data-mmcas-btns]");
           if (!wrap) return;
-          var ns = Array.prototype.slice.call(document.querySelectorAll("button")).find(function (b) {
-            return b.textContent.trim().toLowerCase() === "new session" || b.textContent.trim() === "New Session";
-          });
+          var ns = Array.prototype.slice.call(document.querySelectorAll("button")).find(isNewSessionButton);
           if (!ns) return;
           if (ns.nextSibling === wrap) return;
           ns.parentNode.insertBefore(wrap, ns.nextSibling);

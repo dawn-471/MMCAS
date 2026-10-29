@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 /**
  * MMCAS 队友机配置生成器（setup 阶段运行）
- * 用法: node write-config.mjs --role <coder|writer|modeler> --base <包根目录>
- * 生成: config/sync.config.json、config/providers.yaml（预配 key 则填入）
+ * 用法: node write-config.mjs --role <coder|writer|modeler> --base <包根目录> [--dsh-home <dir>] [--with-desktop]
+ *
+ * 生成: config/sync.config.json、config/providers.yaml（预配 key 则填入）、
+ *       <DSH_HOME>/profiles/web 与 profiles/desktop（合并式 patch，保留 dsh 设置/插件）、
+ *       dsh workspace 注册、skills。
+ * 注意: 0.2.x 的运行时设置源是 profile 的 cordis.patch.yml；脚本不再覆盖 settings.yaml。
  */
+
 import { writeFileSync, mkdirSync, readFileSync, existsSync, copyFileSync, cpSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
+import {
+  ensureProfileScaffold, mergeProfileManifest, ensureProfileLink, upsertEntry, getEntry,
+  setEntryConfigScalars, setEntryConfigBlock, writeText, readText, indentLines, yamlScalar, repairBrokenLinks,
+} from './profile-patch.mjs';
 
 function arg(name) {
   const i = process.argv.indexOf(`--${name}`);
@@ -45,64 +55,161 @@ if (existsSync(akFile)) {
   console.log('[mmcas] 已写入预配 API key');
 }
 
-// 3. dsh web profile patch 生成（dsh 0.2.0 适配版）
-//    - 0.2.0 起 agent 平面（工具/人格/压缩/委派）由 agent preset 提供，web 会话默认挂
-//      standard 预设。本段用同 id 覆盖 preset-standard：persona 前缀 = Role 文档，其余
-//      插件列表与官方一致（基线 = dsh 0.2.0-rc.2 的 presets/standard.patch.yml，
-//      模板块见 pkg/core/standard-preset-020.yml；compaction 参数沿用 v1.2 档 0.7/8192）。
-//    - system-prompt 用 0.1.5+ 字段 personaPrefix/personaSuffix（Role 留一份，供无 preset 面兜底）。
-//    - 旧的逐条 host 层启用行（subagent/skill/工具/压缩）与 tool-str-replace-editor 行已删除：
-//      前者 0.2.0 起由 preset 接管，后者 0.2.0 起并入 tool-fs（read/write/edit 套件）。
+// 3. dsh profile patch 生成（dsh 0.2.1 适配版）
+//    - 0.2.1 的 agent 平面仍由 agent preset 提供；官方 standard 已加入 time-context /
+//      tool-schedule，并移除 backgroundMode / tool-ralph。模板块见
+//      pkg/core/standard-preset-021.yml（compaction 参数沿用 v1.2 档 0.7/8192）。
+//    - system-prompt 用 personaPrefix/personaSuffix 兜底；ui-agent-preset 关闭（单一人格）。
+//    - profile patch 采用合并写入：dsh 0.2.x 把模型/插件等设置存在这里，重跑 setup 不能覆盖。
 const roleFile = path.join(BASE, 'pkg', 'core', 'role.md');
-if (existsSync(roleFile)) {
+const panelPkg = path.join(BASE, 'pkg', 'plugins', 'dsh-panel-mmcas');
+const workspace = path.join(BASE, 'workspace');
+const coreDir = path.join(BASE, 'pkg', 'core');
+const webProfile = path.join(DSH_HOME, 'profiles', 'web');
+const desktopProfile = path.join(DSH_HOME, 'profiles', 'desktop');
+const panelLink = `link:${panelPkg.replace(/\\/g, '/')}`;
+const panelScalars = {
+  workspaceDir: workspace.replace(/\\/g, '/'),
+  role: ROLE,
+  coreDir: coreDir.replace(/\\/g, '/'),
+};
+const MMCAS_HOME = process.env.MMCAS_HOME || path.join(os.homedir(), 'AppData', 'Local', 'mmcas');
+const IS_MMCAS_HOME = path.resolve(DSH_HOME).toLowerCase().startsWith(path.resolve(MMCAS_HOME).toLowerCase());
+const repairedLinks = repairBrokenLinks(path.join(DSH_HOME, 'profiles'));
+if (repairedLinks.length) console.log(`[mmcas] 已清理 ${repairedLinks.length} 个失效的 profile 包链接`);
+
+const PERSONA_SUFFIX = 'Your working directory is {{cwd}}.';
+function systemPromptBlock(roleText) {
+  return [
+    '- id: system-prompt',
+    '  config:',
+    '    personaPrefix: |',
+    ...indentLines(roleText, 6).split('\n'),
+    `    personaSuffix: '${PERSONA_SUFFIX}'`,
+  ].join('\n');
+}
+function mergeSystemPrompt(patch, roleText) {
+  if (!getEntry(patch, 'system-prompt')) return upsertEntry(patch, 'system-prompt', systemPromptBlock(roleText));
+  let out = setEntryConfigBlock(patch, 'system-prompt', 'personaPrefix', [
+    '    personaPrefix: |',
+    ...indentLines(roleText, 6).split('\n'),
+  ]);
+  out = setEntryConfigScalars(out, 'system-prompt', { personaSuffix: PERSONA_SUFFIX });
+  return out;
+}
+function presetBlock(roleText, presetTpl) {
+  const plugins = presetTpl.trimEnd().split('__ROLE_LINES__').join(indentLines(roleText, 12));
+  return [
+    '- id: preset-standard',
+    "  name: '@deepseek-ai/dsh-agent-preset'",
+    '  config:',
+    '    id: standard',
+    '    order: 1',
+    '    plugins:',
+    plugins,
+  ].join('\n');
+}
+function panelBlock(workspaceDir, role, port) {
+  const lines = [
+    '- id: mmcas-panel',
+    '  config:',
+    `    workspaceDir: ${yamlScalar(workspaceDir.replace(/\\/g, '/'))}`,
+    `    role: ${yamlScalar(role)}`,
+    `    coreDir: ${yamlScalar(coreDir.replace(/\\/g, '/'))}`,
+  ];
+  if (port) lines.push(`    port: ${Number(port)}`);
+  return lines.join('\n');
+}
+function mergeMcasEntries(profileDir, blocks, roleText, options = {}) {
+  ensureProfileScaffold(profileDir, options);
+  let patch = readText(path.join(profileDir, 'cordis.patch.yml'), '# MMCAS profile patch\n[]\n');
+  patch = mergeSystemPrompt(patch, roleText);
+  patch = upsertEntry(patch, 'ui-agent-preset', '- id: ui-agent-preset\n  disabled: true');
+  patch = upsertEntry(patch, 'preset-standard', blocks.preset);
+  if (!getEntry(patch, 'mmcas-panel')) patch = upsertEntry(patch, 'mmcas-panel', blocks.panel);
+  else patch = setEntryConfigScalars(patch, 'mmcas-panel', blocks.panelScalars);
+  writeText(path.join(profileDir, 'cordis.patch.yml'), patch);
+  return patch;
+}
+function desktopRunning() {
+  try {
+    if (process.platform === 'win32') {
+      const r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq DeepSeek Harness.exe', '/NH'], { encoding: 'utf8', windowsHide: true });
+      return r.status === 0 && /DeepSeek Harness\.exe/i.test(r.stdout || '');
+    }
+    const r = spawnSync('pgrep', ['-f', 'DeepSeek Harness'], { encoding: 'utf8', windowsHide: true });
+    return r.status === 0 && String(r.stdout || '').trim() !== '';
+  } catch { return false; }
+}
+function provisionDesktop(webPatch, roleText) {
+  if (!existsSync(panelPkg)) return;
+  if (!IS_MMCAS_HOME && !process.argv.includes('--with-desktop')) {
+    console.log('[mmcas] 非 MMCAS DSH_HOME，跳过桌面 profile（需要时加 --with-desktop）');
+    return;
+  }
+  if (desktopRunning()) {
+    console.warn('[mmcas] 桌面端正在运行，跳过桌面 profile 更新（完全退出桌面后重跑 write-config）');
+    return;
+  }
+  ensureProfileScaffold(desktopProfile, { name: 'dsh-profile-desktop', bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] });
+  mergeProfileManifest(desktopProfile, {
+    name: 'dsh-profile-desktop',
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@mmcas/dsh-panel'],
+    dependencies: { '@mmcas/dsh-panel': panelLink },
+  });
+  try { ensureProfileLink(desktopProfile, '@mmcas/dsh-panel', panelPkg); }
+  catch (e) { console.warn('[mmcas] 桌面面板链接失败:', String(e)); }
+  let patch = readText(path.join(desktopProfile, 'cordis.patch.yml'), '# MMCAS desktop profile patch\n[]\n');
+  // 只合并 MMCAS 自有的 system-prompt/preset/panel；已有 dsh 设置保持不动。
+  patch = mergeSystemPrompt(patch, roleText);
+  patch = upsertEntry(patch, 'ui-agent-preset', '- id: ui-agent-preset\n  disabled: true');
+  const preset = getEntry(webPatch, 'preset-standard');
+  if (preset) patch = upsertEntry(patch, 'preset-standard', preset);
+  if (!getEntry(patch, 'mmcas-panel')) patch = upsertEntry(patch, 'mmcas-panel', panelBlock(workspace, ROLE, 19398));
+  patch = setEntryConfigScalars(patch, 'mmcas-panel', { ...panelScalars, port: 19398 });
+  // 首次装配桌面 profile 时补齐 provider/model；已有值不覆盖。
+  for (const id of ['llm-deepseek', 'agent-default-model', 'llm-pi-ai']) {
+    if (getEntry(patch, id)) continue;
+    const block = getEntry(webPatch, id);
+    if (block) patch = upsertEntry(patch, id, block);
+  }
+  writeText(path.join(desktopProfile, 'cordis.patch.yml'), patch);
+  console.log('[mmcas] 桌面 profile 已更新（mmcas-panel.port=19398；用 start-desktop.bat 启动）');
+}
+
+if (existsSync(roleFile) && existsSync(panelPkg)) {
   const roleText = readFileSync(roleFile, 'utf8').trim()
-    .split('{WORKSPACE}').join(path.join(BASE, 'workspace').replace(/\\/g, '/'))
-    .split('{CORE}').join(path.join(BASE, 'pkg', 'core').replace(/\\/g, '/'));
-  const webProfile = path.join(DSH_HOME, 'profiles', 'web');
-  mkdirSync(webProfile, { recursive: true });
-  const indent = (text, n) => text.split('\n').map((l) => (l ? ' '.repeat(n) + l : '')).join('\n');
-  const presetTpl = readFileSync(path.join(BASE, 'pkg', 'core', 'standard-preset-020.yml'), 'utf8').trimEnd();
-  const presetPluginsYaml = presetTpl.split('__ROLE_LINES__').join(indent(roleText, 12));
-  const patch = '# MMCAS web profile patch —— dsh 0.2.0 适配版（由 write-config.mjs 生成）\n' +
-    '- id: system-prompt\n  config:\n    personaPrefix: |\n' + indent(roleText, 6) + '\n' +
-    "    personaSuffix: 'Your working directory is {{cwd}}.'\n" +
-    '# MMCAS 单一人格：不提供模式/默认预设切换入口\n' +
-    '- id: ui-agent-preset\n  disabled: true\n' +
-    '# 覆盖 standard 预设：persona 前缀 = Role 文档（其余与官方一致）\n' +
-    "- id: preset-standard\n  name: '@deepseek-ai/dsh-agent-preset'\n  config:\n    id: standard\n    order: 1\n    plugins:\n" +
-    presetPluginsYaml + '\n';
-  writeFileSync(path.join(webProfile, 'cordis.patch.yml'), patch);
-  console.log('[mmcas] dsh web 配置已生成（0.2.0 preset 适配版）');
+    .split('{WORKSPACE}').join(workspace.replace(/\\/g, '/'))
+    .split('{CORE}').join(coreDir.replace(/\\/g, '/'));
+  const presetTpl = readText(path.join(coreDir, 'standard-preset-021.yml'));
+  if (!presetTpl) throw new Error('缺少 pkg/core/standard-preset-021.yml');
+  const blocks = {
+    systemPrompt: systemPromptBlock(roleText),
+    preset: presetBlock(roleText, presetTpl),
+    panel: panelBlock(workspace, ROLE),
+  };
+  ensureProfileScaffold(webProfile, { name: 'dsh-profile-web', bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] });
+  mergeProfileManifest(webProfile, {
+    name: 'dsh-profile-web',
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@mmcas/dsh-panel'],
+    dependencies: { '@mmcas/dsh-panel': panelLink },
+    patchReload: 'startup',
+  });
+  const webPatch = mergeMcasEntries(webProfile, blocks, roleText, { name: 'dsh-profile-web' });
+  console.log('[mmcas] dsh web 配置已合并（0.2.1 preset 适配版）');
+  provisionDesktop(webPatch, roleText);
 }
 
 // 5. 注册 dsh workspace（依托 dsh 原生 workspace 模块，指向共享工作区仓）
-if (existsSync(path.join(BASE, 'workspace'))) {
-  const { execFileSync } = await import('node:child_process');
+if (existsSync(workspace)) {
   try {
-    execFileSync(process.execPath, [
-      path.join(BASE, 'pkg', 'core', 'register-workspace.mjs'),
-      '--dsh-home', DSH_HOME, '--path', path.join(BASE, 'workspace'), '--title', 'MMCAS',
-    ], { stdio: 'pipe' });
-    console.log('[mmcas] dsh workspace「MMCAS」已注册（会话 cwd 即共享工作区）');
+    const reg = spawnSync(process.execPath, [
+      path.join(coreDir, 'register-workspace.mjs'),
+      '--dsh-home', DSH_HOME, '--path', workspace, '--title', 'MMCAS',
+    ], { stdio: 'pipe', encoding: 'utf8' });
+    if (reg.status === 0) console.log('[mmcas] dsh workspace「MMCAS」已注册（会话 cwd 即共享工作区）');
+    else console.error('[mmcas] workspace 注册失败:', String(reg.stderr || reg.stdout || reg.error || '').trim());
   } catch (e) { console.error('[mmcas] workspace 注册失败:', String(e)); }
-}
-const panelPkg = path.join(BASE, 'pkg', 'plugins', 'dsh-panel-mmcas');
-if (existsSync(panelPkg)) {
-  const webProfile = path.join(DSH_HOME, 'profiles', 'web');
-  mkdirSync(webProfile, { recursive: true });
-  const pkgJson = {
-    name: 'dsh-profile-web',
-    private: true,
-    dependencies: { '@mmcas/dsh-panel': `link:${panelPkg.replace(/\\/g, '/')}` },
-    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@mmcas/dsh-panel'], patchReload: 'startup' } },
-  };
-  writeFileSync(path.join(webProfile, 'package.json'), JSON.stringify(pkgJson, null, 2));
-  // 追加 panel workspaceDir 配置段
-  const patchFile = path.join(webProfile, 'cordis.patch.yml');
-  const workspace = path.join(BASE, 'workspace').replace(/\\/g, '/');
-  writeFileSync(patchFile, readFileSync(patchFile, 'utf8').trimEnd() +
-    `\n- id: mmcas-panel\n  config:\n    workspaceDir: ${workspace}\n    role: ${ROLE}\n`);
-  console.log('[mmcas] 内嵌面板插件已挂载（workspaceDir=' + workspace + '）');
 }
 
 console.log('[mmcas] 配置生成完毕:', cfgDir);

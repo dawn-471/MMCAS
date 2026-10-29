@@ -191,6 +191,74 @@ const okReject = r.status !== 0 && /没有 no-such-model/.test(r.stderr || '');
 console.log(`${okReject ? 'PASS' : 'FAIL'}  非法 --model 拒绝（exit=${r.status}）`);
 if (!okReject) fail++;
 
+// ---- profile patch mode（dsh 0.2.x 主路径） ----
+console.log('\n=== profile patch mode ===');
+const dh = path.join(tmp, 'dshhome');
+const webDir = path.join(dh, 'profiles', 'web');
+const deskDir = path.join(dh, 'profiles', 'desktop');
+for (const dir of [webDir, deskDir]) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'dsh-profile-' + path.basename(dir), private: true, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }, null, 2) + '\n');
+}
+writeFileSync(path.join(webDir, 'cordis.patch.yml'), `# keep me
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  config:
+    baseURL: https://old.example/v1
+    customKeep: yes
+    models:
+      - id: old-model
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: deepseek-official
+    model: old-model
+    reasoningEffort: high
+- id: mmcas-panel
+  config:
+    workspaceDir: D:/ws
+`);
+writeFileSync(path.join(deskDir, 'cordis.patch.yml'), `- id: mmcas-panel
+  config:
+    workspaceDir: D:/ws
+    port: 19398
+`);
+const credProfile = path.join(dh, '.credentials.yaml');
+const baseArgs = ['--config', path.join(cfgDir, 'providers.yaml'), '--dsh-home', dh, '--credentials', credProfile];
+r = run('switch', 'relay-a', ...baseArgs);
+if (r.status !== 0) throw new Error(r.stderr);
+const webPatch = readFileSync(path.join(webDir, 'cordis.patch.yml'), 'utf8');
+const deskPatch = readFileSync(path.join(deskDir, 'cordis.patch.yml'), 'utf8');
+const profileChecks = [
+  ['profile web 写入 baseURL', webPatch.includes('https://relay.example.com/v1')],
+  ['profile web 保留自定义键', webPatch.includes('customKeep: yes')],
+  ['profile web 保留 reasoningEffort', webPatch.includes('reasoningEffort: high')],
+  ['profile web 切换模型', webPatch.includes('model: relay-model-x')],
+  ['profile web 单一 llm-deepseek entry', (webPatch.match(/^- id: llm-deepseek$/gm) || []).length === 1],
+  ['profile web models 块替换', webPatch.includes('- id: relay-model-x') && !webPatch.includes('old-model')],
+  ['profile web 其他 entry 保留', webPatch.includes('- id: mmcas-panel') && webPatch.includes('workspaceDir: D:/ws')],
+  ['仅写 web 时不污染 desktop', !deskPatch.includes('https://relay.example.com/v1')],
+];
+for (const [name, ok] of profileChecks) { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`); if (!ok) fail++; }
+
+r = run('switch', 'deepseek', '--model', 'deepseek-v4-flash', '--config', path.join(cfgDir, 'providers.yaml'), '--dsh-home', dh, '--profiles', 'web,desktop', '--credentials', credProfile);
+if (r.status !== 0) throw new Error(r.stderr);
+const webPatch2 = readFileSync(path.join(webDir, 'cordis.patch.yml'), 'utf8');
+const deskPatch2 = readFileSync(path.join(deskDir, 'cordis.patch.yml'), 'utf8');
+const multiChecks = [
+  ['--profiles 同时写 web+desktop', webPatch2.includes('https://api.deepseek.com') && deskPatch2.includes('https://api.deepseek.com')],
+  ['desktop 保留 panel port', deskPatch2.includes('port: 19398')],
+  ['二次写入不重复 llm entry', (webPatch2.match(/^- id: llm-deepseek$/gm) || []).length === 1 && (deskPatch2.match(/^- id: llm-deepseek$/gm) || []).length === 1],
+];
+for (const [name, ok] of multiChecks) { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`); if (!ok) fail++; }
+
+const beforeDry = readFileSync(path.join(webDir, 'cordis.patch.yml'), 'utf8');
+r = run('switch', 'relay-a', '--config', path.join(cfgDir, 'providers.yaml'), '--dsh-home', dh, '--profile', 'web', '--credentials', credProfile, '--dry-run');
+const afterDry = readFileSync(path.join(webDir, 'cordis.patch.yml'), 'utf8');
+const dryOk = r.status === 0 && beforeDry === afterDry && /dry-run: web/.test(r.stdout || '');
+console.log(`${dryOk ? 'PASS' : 'FAIL'}  profile dry-run 不落盘`);
+if (!dryOk) fail++;
+
 rmSync(tmp, { recursive: true, force: true });
 console.log(fail === 0 ? '\n全部通过' : `\n${fail} 项失败`);
 process.exit(fail === 0 ? 0 : 1);

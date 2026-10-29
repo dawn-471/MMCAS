@@ -28,7 +28,7 @@ dsh (pi-ai 适配器) → http://127.0.0.1:3220/v1 → codex-bridge → codex ex
 
 ## 安装
 
-`setup.bat` 自动完成（安装 codex CLI → 写 codex-home 凭据 → 写 dsh `llm-pi-ai` 段）。
+`setup.bat` 自动完成（安装 codex CLI → 写 codex-home 凭据 → 写 dsh profile 的 `llm-pi-ai` 条目）。
 手动安装：
 
 ```bat

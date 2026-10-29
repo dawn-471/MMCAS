@@ -4,7 +4,7 @@
 
 ## 1. 机制基础（已实测确认）
 
-- dsh 0.2.0-rc.2 原生 skills 机制：`dsh-skill`（registry，已启用）+ `dsh-skill-filesystem`（本地扫描）+ `dsh-tool-skill`（模型访问）——后两者在 host 层默认禁用，**0.2.0 起由 agent preset（standard）逐会话挂载**（0.1.x 需手工 patch 启用；MMCAS 0.2.0 适配后不再逐条启用）。
+- dsh 0.2.1-rc.3 原生 skills 机制：`dsh-skill`（registry，已启用）+ `dsh-skill-filesystem`（本地扫描）+ `dsh-tool-skill`（模型访问）——后两者在 host 层默认禁用，**0.2.x 起由 agent preset（standard）逐会话挂载**（0.1.x 需手工 patch 启用；MMCAS 0.2.1 适配后不再逐条启用）。
 - Skill 格式：目录 `<name>/SKILL.md`（kebab-case name + description 必填，可选 whenToUse/metadata/disable-model-invocation/user-invocable）。references/scripts/assets 子目录不被自动发现，由 SKILL.md 指示 agent 读取。热加载（watch），无需重启。
 - 扫描根（rank 序）：`<projectRoot>/.dsh/skills`（100，工作区仓=git 三端同步）→ `customSkillDirs`（300）→ `<dshHome>/skills`（400，每端独立，随包分发）。
 - 安全纪律沿用：MMCAS 独立 DSH_HOME；profile patch 追加式编辑；改完 dump-config + headless 冒烟。
@@ -66,9 +66,9 @@ modeler 既有 skills/knowledge/（AutoMM 17 篇）处理：精选与上述 skil
 
 ## 6. 工程改造
 
-1. `write-config.mjs`：生成 0.2.0 版 profile patch（system-prompt personaPrefix + preset-standard 覆盖，模板块 `standard-preset-020.yml`；`skill-filesystem`/`tool-skill` 随 preset 挂载，无需逐条启用）；setup 时把角色 skills 拷入目标 `<DSH_HOME>/skills/`。
+1. `write-config.mjs`：生成 0.2.1 版 profile patch（system-prompt personaPrefix + preset-standard 覆盖，模板块 `standard-preset-021.yml`；`skill-filesystem`/`tool-skill` 随 preset 挂载，无需逐条启用）；setup 时把角色 skills 拷入目标 `<DSH_HOME>/skills/`。
 2. `pack.mjs`：打包 `packages/<role>/skills/`。
-3. 本机 mmcas-modeler profile patch 已按 0.2.0 版重建（preset 覆盖式；skill 随 preset 挂载）。
+3. 本机 mmcas-modeler profile patch 已按 0.2.1 版重建（preset 覆盖式；skill 随 preset 挂载）。
 4. 共享 skill：由 Master 端初始化工作区时写入 `.dsh/skills/` 并 push（Slave 端 git pull 获得）。
 
 ## 7. 验证矩阵
