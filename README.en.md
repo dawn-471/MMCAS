@@ -6,10 +6,10 @@ English | [中文](README.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
-![Status: v1.3](https://img.shields.io/badge/Status-v1.3-brightgreen.svg)
+![Status: v1.3.0](https://img.shields.io/badge/Status-v1.3.0-brightgreen.svg)
 ![Roadmap: v1.4](https://img.shields.io/badge/Roadmap-v1.4-8A2BE2.svg)
 
-> Status: v1.3 completes dsh 0.2.1 compatibility for both CLI and Desktop (2026-10-29): merge-based profile config, one-click Desktop onboarding, `reviewer.json` migration, cold-session injection fixes → [ROADMAP.md](ROADMAP.md)
+> Status: v1.3.0 is released (2026-10-29, tag `v1.3.0`) with full dsh 0.2.1 compatibility for CLI and Desktop: merge-based profile config, one-click Desktop onboarding, `reviewer.json` migration, cold-session injection fixes; v1.4 is underway → [ROADMAP.md](ROADMAP.md)
 
 ## What is this
 

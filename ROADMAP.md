@@ -1,9 +1,9 @@
 # Roadmap
 
 > 本文件与 GitHub 的 [Milestones](https://github.com/dawn-471/MMCAS/milestones) / Issues 同步维护。
-> 当前版本：**v1.3（dsh 0.2.1 适配版，2026-10-29）**　下一目标：**v1.4（候选方向见下）**
+> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　下一目标：**v1.4（进行中）**
 
-## v1.3 · dsh 0.2.1 适配（已完成，2026-10-29）
+## v1.3 · dsh 0.2.1 适配（已发布，2026-10-29 / tag `v1.3.0`）
 
 - [x] **CLI + 桌面端统一适配 dsh 0.2.1-rc.3**：profile / preset / 会话注入链路回归
 - [x] **profile 合并式配置**：`write-config` / `switch-provider` / `install-bridge` 按条合并 `cordis.patch.yml`，保留 dsh 设置、已装插件与自定义 panel 端口

@@ -6,10 +6,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
-![Status: v1.3](https://img.shields.io/badge/Status-v1.3-brightgreen.svg)
+![Status: v1.3.0](https://img.shields.io/badge/Status-v1.3.0-brightgreen.svg)
 ![Roadmap: v1.4](https://img.shields.io/badge/Roadmap-v1.4-8A2BE2.svg)
 
-> 状态：v1.3 已完成 dsh 0.2.1（CLI + 桌面端）适配与全链路回归（2026-10-29）：profile 合并式配置、桌面端一键接入、reviewer.json 迁移、冷会话注入修复 → [ROADMAP.md](ROADMAP.md)
+> 状态：v1.3.0 已发布（2026-10-29，tag `v1.3.0`），完成 dsh 0.2.1（CLI + 桌面端）适配与全链路回归：profile 合并式配置、桌面端一键接入、reviewer.json 迁移、冷会话注入修复；v1.4 已开工 → [ROADMAP.md](ROADMAP.md)
 
 ## 这是什么
 
