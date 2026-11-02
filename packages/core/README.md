@@ -12,7 +12,8 @@ MMCAS 共享核心，三个角色包共用。队友侧对其完全无感知。
 | `switch-provider.mjs` | v2 | provider/模型切换：写活动 profile 的 `cordis.patch.yml`（llm-deepseek / agent-default-model；保留已有键）+ credentials；legacy settings.yaml 只读/兼容同步；`--model` 指定模型 |
 | `taskcard/taskcard.mjs` | v3 | 任务卡 CLI 护栏：三状态迁移 + 依赖门控 + WIP 可配（默认 0=不限）+ deps 编辑 + 删除防护（被依赖时拒绝，`--force` 可强制） |
 | `panel/panel.mjs` | v1 | 旧本地渲染器（已退役，面板改为 dsh 内嵌插件 @mmcas/dsh-panel） |
-| `memory/memory-log.mjs` + `memory-search.mjs` | v1 | 记忆文件流 + 词匹配检索（向量检索后置槽位） |
+| `memory/memory-embed.example.json` | v1.4 | 可选 embeddings 配置模板（`<MMCAS_HOME>/memory-embed.json`） |
+| `memory/memory-log.mjs` + `memory-index.mjs` + `memory-search.mjs` | v1.4 | 记忆文件流 + 词匹配/哈希向量/混合/语义检索；可选 OpenAI 兼容 embeddings 与 sqlite-vec；本机索引缓存按文件变更自动重建 |
 | `ssh/sshctl.mjs` | v1 | Master→Slave 控制：status / discover（从 device-info-*.md 自动填设备）/ shell / copy / pull |
 | `write-config.mjs` | v2 | 队友机配置生成：sync.config.json + providers.yaml + 合并式 web/desktop profile（persona、preset-standard、面板、port=19398 桌面）+ dsh workspace 注册 |
 | `register-workspace.mjs` | v1 | 幂等注册 git 仓为 dsh workspace |
@@ -20,7 +21,20 @@ MMCAS 共享核心，三个角色包共用。队友侧对其完全无感知。
 | `setup/` | v1 | setup.bat（9 步带失败汇总）+ start-agent/sync/panel/desktop.bat |
 | A2A 插件 | 后置 | v1 协同走 git 文件通道；A2A 自研后置（dsh 生态无现成插件） |
 
+## 记忆检索（v1.4）
+
+```bash
+node memory/memory-search.mjs --workspace <ws> "数值稳定性"
+node memory/memory-search.mjs --workspace <ws> --mode semantic --json "蒙特卡洛"
+node memory/memory-index.mjs --workspace <ws> --provider openai --backend sqlite
+node memory/memory-search.mjs --workspace <ws> --stats --stale-days 30
+```
+
+- 默认 `hash`：离线、零依赖，索引缓存于 `<MMCAS_HOME>/memory-index/`。
+- 语义：把 `memory/memory-embed.example.json` 复制为 `<MMCAS_HOME>/memory-embed.json`，把 `provider` 改为 `openai`，填写 `endpoint / model / apiKeyEnv`；key 放同名环境变量或 dsh `.credentials.yaml` 的 `refs`。
+- sqlite-vec：`scripts/download-vendor.sh` 拉取 `vec0.dll`；缺失、DB 损坏或元数据不匹配时自动回退 JSON 向量。
+
 ## 零依赖原则
 
-- 同步守护 / 任务卡 / 切换器 / 记忆：Node >= 18，零 npm 依赖。
+- 同步守护 / 任务卡 / 切换器 / 记忆（含默认 hash 向量检索）：Node >= 18，零 npm 依赖；语义 embeddings 与 sqlite-vec 为可选增强（缺失时自动回退）。
 - 所有凭证从本地配置文件/环境变量读取；仓库内只有 `*.example` 占位。

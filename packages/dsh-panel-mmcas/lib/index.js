@@ -33,6 +33,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { handleMemorySearch } from './memory-api.mjs';
 
 export const name = 'mmcas-dsh-panel';
 export const inject = ['clientModules', 'sessions', 'agents', 'sessionController', 'tokenMeter'];
@@ -1144,6 +1145,11 @@ export function apply(ctx, config = {}) {
     const p = url.pathname;
 
     if (p === '/api/state' && req.method === 'GET') return json(res, 200, collectState());
+
+    if (p === '/api/memory/search' && req.method === 'GET') {
+      const out = await handleMemorySearch(ws, url.searchParams);
+      return json(res, out.status, out.body);
+    }
 
     // ---- 看板刷新（含 git 同步；coder/writer 的卡变更由此进入本端） ----
     if (p === '/api/refresh' && req.method === 'GET') {

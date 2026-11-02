@@ -21,8 +21,12 @@ MMCAS is a collaboration system for **three-member mathematical modeling competi
 
 Three design principles: **human-in-the-loop** (any milestone can be paused or rewritten), **never silently lose data** (sync conflicts are surfaced for human arbitration), **zero-registration one-click install** (member machines register nothing external).
 
-## Latest (v1.3)
+## Latest (v1.4 feature-complete, pending release)
 
+- **v1.4 vector memory search**: dependency-free local index (CJK bigrams + Latin/number TF-IDF + cosine) plus optional semantic embeddings (OpenAI-compatible `/embeddings`) and optional sqlite-vec KNN; `memory-search` supports `word|vector|hybrid|semantic`, defaults to hybrid, and falls back automatically.
+- **v1.4 in-panel search**: the Shared Memory drawer gains search, mode/role filters, scores, and fallback hints; `GET /api/memory/search` is consistent across ends; the index cache lives under `MMCAS_HOME` and is never synced via git.
+- **v1.4 operations**: `--stats --stale-days N` stale-entry hints; `download-vendor.sh` fetches sqlite-vec; `pack.mjs` / `audit-recheck.sh` are wired; 87 memory-related regression tests.
+- **v1.3.0 is released (tag `v1.3.0`)**; the following items describe v1.3.
 - **Full dsh 0.2.1 support (CLI + Desktop)**: adapted to `0.2.1-rc.3` and the official DeepSeek Harness Desktop; profile, preset, and session-injection paths are unified.
 - **One-click Desktop onboarding**: new `MMCAS-Desktop` launcher; isolated `DSH_HOME`, generated `profiles/desktop`, fixed panel port `19398`; profile updates are skipped safely while Desktop is running.
 - **Merge-based profile config**: `write-config`, `switch-provider`, and `install-bridge` now merge entries into `cordis.patch.yml`, preserving dsh settings, installed plugins, and custom panel ports; re-running setup no longer wipes them.
@@ -35,6 +39,7 @@ Three design principles: **human-in-the-loop** (any milestone can be paused or r
 - **Three role agents**: per-role persona, skills and tool boundaries.
 - **Task-card DAG scheduling**: tri-state (todo/doing/done) + dependency gating (all deps done before start) + priority + atomic claiming; identical guardrails across CLI and panel; a task poller lets agents auto-claim ready work.
 - **Shared workspace sync**: a private git repo is the single source of truth — workspace / task cards / memory files sync across all machines (daemon v0.2.1: auto commit/push, periodic pull, pre-commit health checks, conflict guard, stale-lock takeover).
+- **Memory search (v1.4)**: shared memory file stream + local vector index; word / hash-vector / hybrid / semantic modes, optional OpenAI-compatible embeddings and sqlite-vec KNN; role/date/limit/JSON/stats filters, local cache rebuilt on file changes, searchable from the panel.
 - **Embedded dsh panel (CLI web + Desktop)**: Overview (devices / sync waterline / task poller), Task Board, Shared Memory, and Audit Room. Not a standalone service; follows the host theme (light/dark).
 - **Cross-machine control**: Tailscale mesh + SSH ops channel; firewall restricts to the Tailscale CIDR, and the Master cannot be controlled back.
 - **Multi-provider APIs**: official APIs and relays with multi-URL / multi-key switching; a built-in `codex-bridge` connects channels that only accept the standard Codex client.
@@ -106,13 +111,14 @@ On a member machine: unzip the bundle → double-click `setup.bat` (≈9 fully a
 | `specs/task-card.md` | Task-card format & scheduling rules |
 | `ROADMAP.md` | Version plan (mirrored to Milestones / Issues) |
 
-## Roadmap (v1.3 summary)
+## Roadmap (v1.3.0 released / v1.4 feature-complete)
 
-- **Full dsh 0.2.1 support**: CLI + Desktop, merge-based profile config, standard preset sync
+- **v1.4 (feature-complete, pending release)**: vector memory search (dependency-free index, hybrid/semantic retrieval, embeddings, sqlite-vec, in-panel search, 87-test regression)
+- **v1.3.0 (released)**: full dsh 0.2.1 support (CLI + Desktop), merge-based profile config, standard preset sync
 - **Desktop onboarding**: `MMCAS-Desktop`, isolated `DSH_HOME`, panel `19398`
 - **Config migration**: `reviewer.json`, provider/bridge write active profile patch, legacy `settings.yaml` compatibility
 - **Stability**: cold-session injection, target-session activity, audit report and credentials fixes
-- **v1.4 candidates**: vector memory search, A2A, in-panel web terminal, more role skills & audit dimensions
+- **Later**: A2A direct channel, full in-panel web terminal, more role skills & audit dimensions
 
 See [ROADMAP.md](ROADMAP.md), [Milestones](https://github.com/dawn-471/MMCAS/milestones) and the Issues.
 

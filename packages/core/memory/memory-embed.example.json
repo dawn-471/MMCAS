@@ -1,0 +1,10 @@
+{
+  "provider": "hash",
+  "endpoint": "https://api.openai.com/v1/embeddings",
+  "model": "text-embedding-3-small",
+  "apiKeyEnv": "MMCAS_EMBED_KEY",
+  "dim": 0,
+  "batchSize": 16,
+  "timeoutMs": 30000,
+  "maxChars": 8000
+}

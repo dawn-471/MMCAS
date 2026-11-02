@@ -27,6 +27,12 @@ window.__ModuleLoader__.load({
       ".mmcas-empty{color:var(--dsw-alias-label-tertiary,#6a7282);font-size:12px;padding:6px 0}",
       ".mmcas-mem{border-bottom:1px dashed var(--dsw-alias-border-l3,#2a2f3c);padding:7px 0;font-size:12px;color:var(--dsw-alias-label-secondary,#8a94a6);line-height:1.5}",
       ".mmcas-mem .r{color:var(--dsw-alias-label-tertiary,#6a7282);font-size:10.5px}",
+      ".mmcas-mem-search{display:flex;gap:6px;margin:8px 0 12px;flex-wrap:wrap;align-items:center}",
+      ".mmcas-mem-search .mmcas-input{flex:1;min-width:180px}",
+      ".mmcas-mem-search .mmcas-select{width:auto;min-width:86px}",
+      ".mmcas-mem-score{color:var(--dsw-alias-label-tertiary,#6a7282);font-size:10.5px;margin-left:6px}",
+      ".mmcas-mem-hint{color:var(--dsw-alias-label-tertiary,#6a7282);font-size:11px;padding:4px 0}",
+      ".mmcas-mem-hint.warn{color:#ffb84d}",
       ".mmcas-git{display:flex;gap:10px;font-family:Consolas,monospace;font-size:11px;padding:3px 0;border-bottom:1px dashed var(--dsw-alias-border-l3,#2a2f3c);color:var(--dsw-alias-label-secondary,#8a94a6)}",
       ".mmcas-git .h{color:var(--dsw-alias-state-business-primary,#4da3ff);width:62px;flex:none}",
       ".mmcas-sync{font-size:11px;color:var(--dsw-alias-label-tertiary,#6a7282)}",
@@ -674,6 +680,12 @@ window.__ModuleLoader__.load({
     // ---------- 视图: 共享记忆 ----------
     function Memory() {
       var _s = useState(null), state = _s[0], setState = _s[1];
+      var _q = useState(""), query = _q[0], setQuery = _q[1];
+      var _m = useState("hybrid"), mode = _m[0], setMode = _m[1];
+      var _r = useState("all"), role = _r[0], setRole = _r[1];
+      var _res = useState(null), result = _res[0], setResult = _res[1];
+      var _b = useState(false), busy = _b[0], setBusy = _b[1];
+      var _e = useState(""), err = _e[0], setErr = _e[1];
       useEffect(function () {
         var alive = true;
         function load() { fetch(API + "/api/state").then(function (r) { return r.json(); }).then(function (s) { if (alive) setState(s); }).catch(function () {}); }
@@ -681,17 +693,70 @@ window.__ModuleLoader__.load({
         var t = setInterval(load, REFRESH_MS);
         return function () { alive = false; clearInterval(t); };
       }, []);
-      var mems = (state && state.memory) || [];
-      if (!mems.length) return el("div", { className: "mmcas-empty" }, "暂无记忆条目（用 memory-log 写入，git 同步共享）");
-      return el(Fragment, null,
-        mems.map(function (m, i) {
+      function doSearch() {
+        var q = query.trim();
+        setErr("");
+        if (!q) { setResult(null); return; }
+        setBusy(true);
+        var url = API + "/api/memory/search?q=" + encodeURIComponent(q)
+          + "&mode=" + encodeURIComponent(mode)
+          + "&role=" + encodeURIComponent(role)
+          + "&limit=20";
+        fetch(url)
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (x) {
+            if (!x.ok || !x.j || !x.j.ok) throw new Error((x.j && x.j.error) || ("HTTP " + (x.ok ? 200 : 500)));
+            setResult(x.j);
+          })
+          .catch(function (e) { setResult(null); setErr(String((e && e.message) || e)); })
+          .then(function () { setBusy(false); });
+      }
+      var mems = result ? (result.results || []) : ((state && state.memory) || []);
+      var hint = null;
+      if (err) hint = el("div", { className: "mmcas-mem-hint warn" }, "搜索失败：" + err);
+      else if (result && result.fallback) hint = el("div", { className: "mmcas-mem-hint warn" }, "语义索引不可用，已回退：" + result.fallback);
+      else if (result && result.backendNote) hint = el("div", { className: "mmcas-mem-hint warn" }, result.backendNote);
+      else if (result) hint = el("div", { className: "mmcas-mem-hint" }, "命中 " + result.total + " 条 · " + (result.effectiveMode || result.mode) + " · " + (result.provider || "hash") + (result.backend ? " / " + result.backend : ""));
+      else hint = el("div", { className: "mmcas-mem-hint" }, "最近写入的记忆；输入关键词可做混合/语义检索。");
+      var list = mems.length
+        ? mems.map(function (m, i) {
           var rc = ROLE_C[m.role] || "#8a94a6";
-          return el("div", { className: "mmcas-mem", key: i },
+          var body = String(m.body !== undefined ? m.body : (m.text || "")).slice(0, 400);
+          var score = typeof m.score === "number" ? el("span", { className: "mmcas-mem-score" }, "分=" + m.score.toFixed(3)) : null;
+          return el("div", { className: "mmcas-mem", key: (m.file || "") + ":" + (m.date || "") + ":" + (m.time || "") + ":" + i },
             el("span", { style: { color: rc, fontWeight: 600 } }, "[" + (ROLE_I[m.role] || "?") + "] "),
-            m.body,
-            el("div", { className: "r" }, m.date + " " + m.time)
+            body,
+            score,
+            el("div", { className: "r" }, m.date + " " + m.time + (m.file ? " · " + m.file : ""))
           );
         })
+        : el("div", { className: "mmcas-empty" }, query ? "无命中" : "暂无记忆条目（用 memory-log 写入，git 同步共享）");
+      return el(Fragment, null,
+        el("div", { className: "mmcas-mem-search" },
+          el("input", {
+            className: "mmcas-input",
+            placeholder: "搜索共享记忆（支持语义/混合）",
+            value: query,
+            onChange: function (e) { setQuery(e.target.value); },
+            onKeyDown: function (e) { if (e.key === "Enter") doSearch(); }
+          }),
+          el("select", { className: "mmcas-select", value: mode, onChange: function (e) { setMode(e.target.value); } },
+            el("option", { value: "hybrid" }, "混合"),
+            el("option", { value: "semantic" }, "语义"),
+            el("option", { value: "vector" }, "向量"),
+            el("option", { value: "word" }, "词匹配")
+          ),
+          el("select", { className: "mmcas-select", value: role, onChange: function (e) { setRole(e.target.value); } },
+            el("option", { value: "all" }, "全部"),
+            el("option", { value: "modeler" }, "建模"),
+            el("option", { value: "coder" }, "编程"),
+            el("option", { value: "writer" }, "论文")
+          ),
+          el("button", { className: "mmcas-btn-primary", disabled: busy, onClick: doSearch }, busy ? "搜索中…" : "搜索"),
+          el("button", { className: "mmcas-btn-ghost", onClick: function () { setQuery(""); setResult(null); setErr(""); } }, "清空")
+        ),
+        hint,
+        list
       );
     }
 

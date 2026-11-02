@@ -21,8 +21,12 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 
 三条设计原则：**人类在环**（关键节点可随时卡停/改写）、**永不静默丢数据**（同步冲突显式上报，人类裁决）、**零注册一键安装**（成员机不注册任何外部账号）。
 
-## 最新更新（v1.3）
+## 最新更新（v1.4 功能完成，待发布）
 
+- **v1.4 记忆向量检索**：零依赖本地索引（中文 bigram + 英文/数字词元 TF-IDF + 余弦）＋可选语义嵌入（OpenAI 兼容 `/embeddings`）＋可选 sqlite-vec KNN；`memory-search` 支持 `word|vector|hybrid|semantic`，默认混合，语义失败自动回退。
+- **v1.4 面板搜索**：共享记忆抽屉新增搜索框、模式/角色筛选、分数与降级提示；`GET /api/memory/search` 三端一致，索引缓存于 `MMCAS_HOME`、不随 git 同步。
+- **v1.4 运维**：`--stats --stale-days N` 过期条目提示；`download-vendor.sh` 拉取 sqlite-vec，`pack.mjs` / `audit-recheck.sh` 已接线；87 项记忆相关回归。
+- **v1.3.0 已发布（tag `v1.3.0`）**，以下为 v1.3 内容。
 - **dsh 0.2.1 全兼容（CLI + 桌面端）**：适配 `0.2.1-rc.3`，支持官方 DeepSeek Harness Desktop；统一修复 profile / preset / 会话注入链路。
 - **桌面端一键接入**：新增 `MMCAS-Desktop` 启动器；使用 MMCAS 独立 `DSH_HOME`、自动生成 `profiles/desktop`、面板数据端固定 `19398`；桌面端运行中安全跳过 profile 更新。
 - **profile 合并式配置**：`write-config`、`switch-provider`、`install-bridge` 改为按条合并 `cordis.patch.yml`，保留 dsh 设置、已装插件和自定义 panel 端口；重跑 setup 不再清空。
@@ -35,6 +39,7 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 - **三角色 Agent**：各角色独立的提示词（persona）、技能与工具边界。
 - **任务卡 DAG 调度**：三状态（todo/doing/done）+ 依赖门控（deps 全 done 才可开始）+ 优先级 + 原子认领；CLI 与面板双通道同护栏；任务轮询器支持 Agent 自动接取就绪任务。
 - **共享工作区同步**：git 私有仓为唯一事实源——工作区 / 任务卡 / 记忆文件三端自动同步（守护进程 v0.2.1：自动 commit/push、定时 pull、入库前体检、冲突守卫、过期锁接管）。
+- **记忆检索（v1.4）**：共享记忆文件流 + 本地向量索引；支持词匹配 / 哈希向量 / 混合 / 语义四种模式，可选 OpenAI 兼容 embeddings 与 sqlite-vec KNN；角色/日期/limit/JSON/stats，索引本机缓存并按文件变更自动重建，面板可直接搜索。
 - **dsh 内嵌面板（CLI web + 桌面端）**：总控（成员设备 / 同步水位 / 任务轮询器）、任务看板、共享记忆、审计室；不是独立服务，随 dsh 侧栏运行，自动跟随宿主明暗主题。
 - **跨设备控制**：Tailscale 组网 + SSH 运维通道；防火墙只放行 Tailscale 网段，Master 不可被反向控制。
 - **多 API 来源**：官方 API 与中转站多 URL / 多 key，一键切换；内置 `codex-bridge` 让“仅接受标准 Codex 客户端”的通道也能接入。
@@ -106,13 +111,14 @@ bash scripts/download-vendor.sh
 | `specs/task-card.md` | 任务卡格式与调度规则 |
 | `ROADMAP.md` | 版本规划（与 Milestones / Issues 同步） |
 
-## Roadmap（v1.3 摘要）
+## Roadmap（v1.3.0 已发布 / v1.4 功能完成）
 
-- **dsh 0.2.1 全兼容**：CLI + 桌面端、profile 合并、standard preset 同步
+- **v1.4（功能完成，待发布）**：向量化记忆检索（零依赖索引、混合/语义检索、语义嵌入、sqlite-vec、面板搜索、87 项回归）
+- **v1.3.0（已发布）**：dsh 0.2.1 全兼容（CLI + 桌面端）、profile 合并、standard preset 同步
 - **桌面端接入**：`MMCAS-Desktop`、独立 `DSH_HOME`、面板 `19398`
 - **配置迁移**：`reviewer.json`、provider/bridge 直写 profile patch、旧 `settings.yaml` 兼容
 - **稳定性**：冷会话注入、目标会话活跃度、审计报告与 credentials 修复
-- **v1.4 候选**：向量化记忆检索、A2A、面板内 Web 终端、更多角色技能与审计维度
+- **更远**：A2A 直连、面板内 Web 终端、更多角色技能与审计维度
 
 详见 [ROADMAP.md](ROADMAP.md)、[Milestones](https://github.com/dawn-471/MMCAS/milestones) 与 Issues。
 

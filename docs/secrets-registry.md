@@ -10,6 +10,7 @@
 | 3 | 组网预授权 key（Tailscale auth key） | 安装脚本参数 / 环境变量 | 否 | 部署者生成，带过期时间与 tag | 按策略过期/吊销；由 tailnet 管理员自建 |
 | 4 | SSH 私钥（Master → 成员远程控制） | 部署机 `~/.ssh/`，安装期生成 | 否 | 公钥分发，私钥不离开 Master | 成员退役后清理成员机 `authorized_keys` |
 | 5 | 网盘 / 共享盘凭证 | 由对应工具独立管理（OAuth 等） | 否 | 与 MMCAS 代码无关 | 按各服务自身流程吊销 |
+| 6 | 语义检索 embeddings API key（可选） | `<MMCAS_HOME>/memory-embed.json` 的 `apiKeyEnv` 指向的环境变量，或 dsh `.credentials.yaml` 的 `refs` | 否 | 可复用现有 provider key，也可独立一把；默认 `provider=hash` 时不需要 | 不启用语义检索即无需；吊销/缺失时自动回退 hybrid |
 
 ## 凭证生命周期纪律
 

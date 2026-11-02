@@ -66,7 +66,17 @@ cpSync(path.join(ROOT, 'packages', 'core', 'switch-provider.mjs'), path.join(PKG
 cpSync(path.join(ROOT, 'packages', 'core', 'panel', 'panel.mjs'), path.join(PKG, 'core', 'panel', 'panel.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'taskcard', 'taskcard.mjs'), path.join(PKG, 'core', 'taskcard', 'taskcard.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-log.mjs'), path.join(PKG, 'core', 'memory', 'memory-log.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-index.mjs'), path.join(PKG, 'core', 'memory', 'memory-index.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-search.mjs'), path.join(PKG, 'core', 'memory', 'memory-search.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-embed.mjs'), path.join(PKG, 'core', 'memory', 'memory-embed.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-vec-sqlite.mjs'), path.join(PKG, 'core', 'memory', 'memory-vec-sqlite.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-embed.example.json'), path.join(PKG, 'core', 'memory', 'memory-embed.example.json'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-search.mjs'), path.join(PKG, 'core', 'memory', 'test-memory-search.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-semantic.mjs'), path.join(PKG, 'core', 'memory', 'test-memory-semantic.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-sqlite.mjs'), path.join(PKG, 'core', 'memory', 'test-memory-sqlite.mjs'));
+const vecExt = path.join(ROOT, 'vendor', 'sqlite-vec', 'vec0.dll');
+if (existsSync(vecExt)) cpSync(vecExt, path.join(PKG, 'core', 'memory', 'vec0.dll'));
+else console.warn('提示: 未找到 vendor/sqlite-vec/vec0.dll，包内不含 sqlite-vec 加速（JSON 索引仍可用）');
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-sync.bat'), path.join(PKG, 'core', 'start-sync.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-agent.bat'), path.join(PKG, 'core', 'start-agent.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-desktop.bat'), path.join(PKG, 'core', 'start-desktop.bat'));

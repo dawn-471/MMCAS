@@ -1,7 +1,7 @@
 # Roadmap
 
 > 本文件与 GitHub 的 [Milestones](https://github.com/dawn-471/MMCAS/milestones) / Issues 同步维护。
-> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　下一目标：**v1.4（进行中）**
+> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　开发线：**v1.4（功能完成，待发布）**
 
 ## v1.3 · dsh 0.2.1 适配（已发布，2026-10-29 / tag `v1.3.0`）
 
@@ -13,6 +13,19 @@
 - [x] **稳定性修复**：冷会话 `prompt` signal、目标会话活跃度、审计报告唯一文件名、credentials `refs` 安全写入、New Session 本地化匹配
 - [x] **回归**：poller 47、audit 16、profile-patch 16、switch-provider 全部通过；notices / taskcard / sync 回归通过
 
+## v1.4 · 向量化记忆检索（功能完成，2026-11-02）
+
+- [x] **零依赖向量索引**：中文 bigram + 英文/数字词元 TF-IDF，倒排表 + 余弦相似度；索引缓存于 `MMCAS_HOME/memory-index`，属本机派生数据、不随 git 同步
+- [x] **检索模式**：`memory-search --mode word|vector|hybrid|semantic`，默认 hybrid；保留原词匹配模式并作为无索引降级路径
+- [x] **索引生命周期**：按 memory 文件 mtime/size 自动重建；文件删除同步移除；UTF-8 BOM 兼容；原子写缓存
+- [x] **筛选与输出**：角色 / `--since` / `--until` / `--limit` / `--json` / `--stats`
+- [x] **语义嵌入后端**：OpenAI 兼容 `/embeddings`（`memory-embed.json` + `apiKeyEnv`）；批处理、超时、归一化、模型/维度校验；失败自动回退 hybrid
+- [x] **sqlite-vec 后端**：`memory-index --backend sqlite` 建 `vec0`（role/date 元数据过滤、KNN、索引元数据校验）；无扩展/`node:sqlite` 时回退 JSON 向量；`download-vendor.sh` 拉取 Windows 扩展并随包
+- [x] **面板共享记忆搜索**：共享记忆抽屉搜索框 + 模式/角色筛选 + 分数/回退提示；`GET /api/memory/search` 兼容开发仓与打包布局
+- [x] **记忆维护（提示）**：`--stats --stale-days N` 输出过期条数与最早日期（非破坏性）
+- [x] **回归**：87 项记忆相关单测（基础 28 / 语义 26 / sqlite-vec 17 / 面板 16），覆盖 mock embeddings、批量、鉴权、回退、KNN、元数据过滤、BOM、缓存
+- [ ] **记忆归档工具**：按角色/日期归档旧文件（可选，延后）
+
 ## v1.2 · 实战修订（已完成，2026-09-16 发布）
 
 - [x] **调度核心**：面板合并（自动接取轮询器 + 看板 30s git 同步）、修复重复/过期派发、去掉 WIP 硬限制（依赖门控为准）、补齐轮询器回归测试
@@ -22,9 +35,8 @@
 - [x] **同步基建**：sync-daemon v0.2.1 收口与下发、迁移自检（repo 配置刷新）、守护看门狗、凭据额度可见
 - [x] **打包发布**：出厂默认项统一（模型目录 / 视觉能力）、三端重打包与升级流程验证
 
-## 更远（v1.4 候选方向）
+## 更远（v1.4 之后候选）
 
-- 向量化记忆检索（sqlite-vec）
 - Agent 间直连通道（A2A）
 - 面板内完整 Web 终端
 - 更多角色化技能与审计维度
@@ -33,7 +45,8 @@
 
 ## English
 
-- Current: **v1.3** (dsh 0.2.1 compatibility, 2026-10-29). Next: **v1.4** (candidates below).
+- Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release).
+- **v1.4 (feature-complete)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; 87-test regression.
 - **v1.3 (shipped)**: full dsh 0.2.1 support for CLI and Desktop; merge-based profile configuration; one-click Desktop onboarding (`MMCAS-Desktop`, isolated `DSH_HOME`, panel 19398); standard preset sync (`time-context` / `tool-schedule`); reviewer config migration to `reviewer.json` with legacy `settings.yaml` / `.imported` compatibility; cold-session injection, target-session activity, audit report naming, credentials refs, and localized New Session fixes; full regression.
 - **v1.2 (shipped)**: scheduler core hardening (auto-claim poller into the mainline, fix duplicate/stale dispatch, remove the hard WIP cap, regression tests); sessions & context (enable built-in compaction, per-task session lifecycle, context waterline warnings); cross-end messaging & governance (notices, stop commands, return cards, rework flow); independent audit instance (one-click third-party audits via a local bridge); sync infra (v0.2.1 rollout, migration self-check, watchdog); packaging & defaults.
-- **Later (v1.4 candidates)**: vector memory search, direct agent-to-agent channel, full in-panel web terminal, more role skills & audit dimensions.
+- **Later**: direct agent-to-agent channel (A2A), full in-panel web terminal, more role skills & audit dimensions.

@@ -2,7 +2,7 @@
 
 > Mathematical Modeling Competition Assistance System（数学建模竞赛辅助系统）
 > 2026-09-08 初稿 / v1.1 开工修订 / v1.2 赛后实战修订 / v1.3 dsh 0.2.1 适配 / v1.4 向量记忆检索。
-> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」完成；v1.3.0 dsh 0.2.1（CLI + 桌面端）适配已发布（tag `v1.3.0`）；v1.4 开发中。
+> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」完成；v1.3.0 dsh 0.2.1（CLI + 桌面端）适配已发布（tag `v1.3.0`）；v1.4 向量记忆检索功能完成（待发布）。
 
 ## 0. 项目定位
 
@@ -119,7 +119,7 @@ git 保底：冲突永不静默丢失，冲突文件由人类裁决。
 
 ### 5.1 包结构（开发仓 packages/ 下）
 
-- `packages/core`（共享）：同步守护、provider 管理、任务卡插件、记忆插件（槽位）、A2A（槽位）、SSH 工具、**审计工具链（v1.2）**、**notices CLI（v1.2）**。
+- `packages/core`（共享）：同步守护、provider 管理、任务卡插件、**记忆文件流与向量检索（v1.4）**、A2A（槽位）、SSH 工具、**审计工具链（v1.2）**、**notices CLI（v1.2）**。
 - role 层（互不相同）：role.md（人格；装机时注入 dsh——0.2.x 起 = system-prompt.personaPrefix + preset-standard persona 覆盖）、skills/、tools 白名单、模型配置。
   - `packages/modeler`（Master）：数学建模知识库、文献、建模方法论。
   - `packages/coder`：数值计算、优化求解、并行/长任务队列、可视化。
@@ -196,16 +196,18 @@ default: deepseek
 - 不要用 `dsh --profile desktop` / `dsh plugin --profile desktop` 管理该 profile：0.2.1 起 CLI 明确拒绝，profile 由 Electron 独占管理。
 - 若桌面端已在运行，先完全退出再启动，避免沿用默认 `~/.dsh` 或旧 profile。
 
-## 6. 记忆后端（v1 已落地）
+## 6. 记忆后端（v1.4：文件流 + 本地向量索引）
 
-- 已实现：append-only 文件流（memory/<role>/，memory-log/memory-search 工具 + 词匹配检索）+ 三副本 git 同步并集合并。
-- 后置槽位：本地向量索引（vec/sqlite）、推导层复用——v1 未实现。
+- 已实现：append-only 文件流（memory/<role>/，memory-log）+ 三副本 git 同步并集合并。
+- v1.4：零依赖本地向量索引（中文 bigram + 英文/数字词元 TF-IDF、倒排表、余弦）；`memory-search` 支持 `word|vector|hybrid|semantic` 四模式；索引为本机派生缓存（`MMCAS_HOME/memory-index`），**不随 git 同步**，memory 文件变更后自动重建（见 §16）。
+- v1.4 可选增强：OpenAI 兼容 `/embeddings` 生成稠密向量（`memory-embed.json` + `apiKeyEnv`），sqlite-vec `vec0` 作为 ANN 后端（role/date 元数据过滤）；任一不可用时回退 JSON/TF-IDF，索引 schema 以 `version` 隔离。
+- v1.4 入口：CLI + 面板「共享记忆」搜索框（`GET /api/memory/search`），支持模式/角色/日期/limit 与降级提示。
 - 已查证：不引入 dsh 生态第三方记忆插件（persona 写死"记忆只走 MMCAS 文件流"）。
 
 ## 7. 总控面板（v6 = dsh 内嵌插件 @mmcas/dsh-panel，合并版）
 
 - 定位：dsh 侧栏内嵌抽屉，**不是独立服务**；数据走 host 插件回环 HTTP（web：127.0.0.1:3210，端口可配，web 端口 +11 约定；桌面端：固定 19398，dsh-app:// 无端口）。
-- **按钮（三端一致）**：总控 / 任务看板 / 共享记忆 / **审计室**。
+- **按钮（三端一致）**：总控 / 任务看板 / 共享记忆（v1.4 含搜索）/ **审计室**。
 - **总控抽屉**：同步水位 + 成员设备 + **上下文水位**（v1.2）+ **消息区（notices）**（v1.2）+ 环境同步区 + 操控门户（仅 Master）。
 - **任务看板**：三列板（priority 排序）+ 新建/编辑/详情（DAG 门控 + 权限护栏）+ **30s 自动 git 同步**（fetch → 落后则 merge（快进优先）→ 领先则 push；单飞——定时器与 HTTP 共用一次同步；默认不 add/commit 以免与守护抢锁；冲突/失败显式上报）+「刷新」「立即同步」按钮 + WIP 计数显示（限制可配，默认不限）。
 - **调度核心（自动接取 v2，进主线）**：
@@ -258,6 +260,13 @@ default: deepseek
 - **Reviewer 迁移**：审阅室配置落到 MMCAS 自有 `reviewer.json`，旧 `settings.yaml` / `.imported` 只读兼容。
 - **稳定性**：冷会话 `prompt` signal、目标会话活跃度、审计报告唯一文件名、credentials `refs`、New Session 本地化匹配。
 
+### v1.4 向量化记忆检索（功能完成，2026-11-02）
+
+- **Phase 1**：零依赖本地索引（中文 bigram / 英文数字词元、TF-IDF、倒排表、余弦）；`memory-search` 四模式（word / vector / hybrid / semantic）；角色 / 日期 / limit / JSON / stats；缓存自动重建与 BOM 兼容。
+- **Phase 2**：可选语义嵌入后端（OpenAI 兼容 embeddings，批处理/超时/模型与维度校验）与 sqlite-vec ANN 后端（`vec0` + role/date 元数据过滤）；失败回退 JSON/hybrid。
+- **Phase 3**：面板「共享记忆」搜索框、模式/角色筛选、分数与降级提示；`GET /api/memory/search` 三端一致。
+- **回归**：87 项记忆相关单测（基础 28 / 语义 26 / sqlite-vec 17 / 面板 16）。
+
 ### v1.2 实战修订（已完成，2026-09-16 发布）
 
 来源：实战反馈（建议书十项）+ 队友端回收材料分析。六个工作流（W0–W6，详见 ROADMAP 与项目管理条目）：
@@ -282,7 +291,7 @@ default: deepseek
 - **凭证零入库**：所有 key/token 只存在于本地配置文件（.gitignore 覆盖）或环境变量；代码只读配置，仓库永远只有 `*.example` 占位。开源 = 零改动。
 - **暴露面登记**：所有涉及凭证的位置、性质、开源前处理方式统一登记于 `docs/secrets-registry.md`，新增凭证渠道必须先登记。
 - **开源路线**：完成且运行良好后开源到 GitHub；开源前执行：脱敏 docs（人员/设备/地点）、清 git 历史中的敏感信息（如有）、README 只写功能与差异。
-- **发布状态**：v1.2.0 与 v1.3.0 已开源（MIT）；v1.3.0 tag 指向 dsh 0.2.1 适配完成点。后续修订按 Milestone 推进，每次发布重复上述检查。
+- **发布状态**：v1.2.0 与 v1.3.0 已开源（MIT）；v1.3.0 tag 指向 dsh 0.2.1 适配完成点；v1.4 功能已完成、待发布。后续修订按 Milestone 推进，每次发布重复上述检查。
 
 ## 12. 会话生命周期与上下文（v1.2）
 
@@ -363,3 +372,64 @@ dsh 自带压缩三件套（`compaction-basic` + `command-compact` + `tool-resul
 - **语义**：`wipLimit` 默认 `0 = 不限制`（可配正整数）；面板保留计数显示与 priority 排序；"被依赖卡优先"逻辑不变。
 - **执行点**（五处同改）：panel host 校验、`taskcard.mjs` 护栏、三份 role.md 表述、运行时 profile patch、面板徽标显示。
 - **兼容**：旧文档/旧包的"≤2"表述随 v1.2 全量替换；specs v4 废除该字段（或写 `wipLimit: 0` 说明）。
+
+## 16. 记忆向量检索（v1.4）
+
+### 16.1 目标与边界
+
+- 目标：在不改变"记忆文件流为唯一事实源"的前提下，让 `memory-search` 支持中文近邻/模糊匹配、语义召回与混合排序，降低跨会话记忆召回漏检。
+- 边界：默认 `hash` 模式**不调用任何嵌入 API、不下载模型、不新增 npm 依赖**；语义模式仅在显式配置 `provider=openai` 时启用。索引只是可重建的本机缓存，丢失无数据风险。
+- 兼容：旧命令 `memory-search <查询词>` 仍可用；默认模式由词匹配升级为 hybrid，`--mode word` 可回到 v1 行为；语义失败自动回退 hybrid 并在结果中显式标注。
+
+### 16.2 数据与索引
+
+- 数据源：`workspace/memory/<role>/YYYY-MM-DD.md`，条目格式 `## HH:MM` + 正文（沿用 v1）。
+- 索引位置：`MMCAS_HOME/memory-index/<sha256(绝对工作区路径)[:16]>.json`（默认 `%LOCALAPPDATA%\mmcas\memory-index`）；**不写入工作区仓**。
+- 索引内容（v3）：`version / builtAt / files{mtimeMs,size} / docs[]（含可选 vec[]）/ postings{token:[[docIndex,tf]]} / idf / embed{provider,model,dim,builtAt,sqlite?}`。
+- 生命周期：每次检索先遍历 memory 文件（mtime/size 签名）；文件集合、mtime 或 size 变化即整库重建（比赛工作区记忆量小，优先正确性）；文件删除自动从索引消失；写入采用临时文件 + rename 原子替换；索引损坏/不可写时退化为内存索引，不阻断检索。
+- BOM：读取时剥离 UTF-8 BOM，避免首条 `## HH:MM` 被漏解析。
+
+### 16.3 向量化与打分
+
+- 词元：拉丁字母/数字按词切分（保留 `_ + . # / -` 复合词，并拆子词）；中文按连续汉字段取 **bigram**（单字段保留 unigram），兼顾短语与单字查询。
+- 权重：`w = (1 + ln(tf)) * idf`，`idf = ln(1 + (N - df + 0.5)/(df + 0.5))`（BM25 风格，恒正）。
+- 余弦：`cos(q,d) = Σ wq·wd / (|q|·|d|)`；文档范数在建索引时预计算，查询只扫倒排表命中的文档。
+- 混合：`score = cos + 0.25 * ln(1 + literalHits)`；`literalHits` 为查询词（空格切分）在正文中的字面命中次数。`word` 模式仅用 `literalHits`，`vector` 模式仅用哈希余弦，`semantic` 模式用稠密向量余弦（仍叠加字面命中提升）。
+- 语义向量：嵌入结果做 L2 归一化后存储；查询向量同样归一化。模型/维度必须与索引 `embed` 元数据一致，否则回退 hybrid。
+- sqlite-vec：`vec0(embedding float[dim], role text, date text)`，rowid = docIndex+1；KNN 用 L2 距离，归一化后 `similarity = max(0, 1 - d²/2)`；查询 meta（builtAt/model/dim/docs）不一致即拒绝使用并回退 JSON。
+- 排序：分数降序 → 日期降序 → 时间降序 → 文件路径稳定排序；`total` 保留过滤后总数，`limit` 只截断展示。
+
+### 16.4 CLI
+
+```bash
+node memory-search.mjs --workspace <ws> <查询词> \
+  [--role modeler|coder|writer|all] [--limit N] \
+  [--mode word|vector|hybrid|semantic] [--since YYYY-MM-DD] [--until YYYY-MM-DD] \
+  [--provider hash|openai] [--embed-config <file>] \
+  [--backend auto|json|sqlite] [--vec-ext <path>] \
+  [--index <path>] [--rebuild] [--json]
+node memory-search.mjs --workspace <ws> --stats [--stale-days N] [--json]
+
+node memory-index.mjs --workspace <ws> \
+  [--provider hash|openai] [--embed-config <file>] \
+  [--backend auto|json|sqlite] [--dry-run] [--show-config] [--json]
+node memory-index.mjs --workspace <ws> --stats [--stale-days N] [--json]
+```
+
+- embeddings 配置：`<MMCAS_HOME>/memory-embed.json`（模板 `packages/core/memory/memory-embed.example.json`），将 `provider` 设为 `openai`，字段 `endpoint / model / apiKeyEnv / dim / batchSize / timeoutMs / maxChars`；key 优先读同名环境变量，其次读 dsh `.credentials.yaml` 的 `refs`，不落日志。
+- `--json` 输出 `query / mode / effectiveMode / fallback / backend / indexPath / builtAt / docs / total / results[]`，供面板与 agent 直接消费。
+- 无查询词 exit 2；非法 role/mode/日期 exit 2；空工作区返回 0 条而非报错；语义失败回退 hybrid 且 `fallback` 非空。
+
+### 16.5 默认离线，语义 / ANN 可选
+
+- 默认 `hash` 模式完全离线、零 npm 依赖、零外部调用，覆盖中文 bigram 模糊召回与词匹配排序。
+- `semantic` 需要真正的语义向量；sqlite-vec 只负责存储与近邻检索，**不产生向量**。因此语义模式仅在配置 OpenAI 兼容 `/embeddings` 时启用，复用现有 provider key 或独立 key 均可。
+- `sqlite-vec` 作为可选 ANN 后端：Node ≥ 22.5（内置 `node:sqlite`）+ 随包 `vec0.dll`；无扩展、无 `node:sqlite`、DB 缺失或元数据不匹配时自动回退 JSON 向量，检索不中断。
+- 选型门槛：记忆条目规模增长到 ANN 有收益（约 > 1 万条）或需要跨语言/同义词语义召回时启用语义 + sqlite-vec；否则 hash 足以覆盖比赛期记忆量。
+
+### 16.6 面板与运维
+
+- 面板 `GET /api/memory/search?q=&mode=&role=&limit=&since=&until=&backend=`：返回 `{ok, results[], total, mode, effectiveMode, fallback, backend, provider, ...}`；非法参数 400，缺工作区 400。
+- 面板「共享记忆」抽屉：搜索框 + 模式/角色筛选 + 分数 + 降级提示；无查询时显示最近条目。
+- 维护：`--stats --stale-days N` 输出 `staleDocs / staleCutoff / oldestDate`（非破坏性提示）；归档工具留作可选后续。
+- 打包：`download-vendor.sh` 从 npmmirror 拉取 `sqlite-vec-windows-x64@0.1.9`，`pack.mjs` 复制 `vec0.dll` 到 `pkg/core/memory/`，`audit-recheck.sh` 校验记忆模块与测试随包。
