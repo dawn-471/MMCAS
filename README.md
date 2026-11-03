@@ -118,7 +118,7 @@ bash scripts/download-vendor.sh
 - **桌面端接入**：`MMCAS-Desktop`、独立 `DSH_HOME`、面板 `19398`
 - **配置迁移**：`reviewer.json`、provider/bridge 直写 profile patch、旧 `settings.yaml` 兼容
 - **稳定性**：冷会话注入、目标会话活跃度、审计报告与 credentials 修复
-- **更远**：A2A 直连、面板内 Web 终端、更多角色技能与审计维度
+- **v1.5（规划中）**：A2A 直连为主线，面板 WebTTY、角色技能/审计维度并行，可选记忆归档
 
 详见 [ROADMAP.md](ROADMAP.md)、[Milestones](https://github.com/dawn-471/MMCAS/milestones) 与 Issues。
 

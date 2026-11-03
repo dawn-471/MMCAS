@@ -118,7 +118,7 @@ On a member machine: unzip the bundle → double-click `setup.bat` (≈9 fully a
 - **Desktop onboarding**: `MMCAS-Desktop`, isolated `DSH_HOME`, panel `19398`
 - **Config migration**: `reviewer.json`, provider/bridge write active profile patch, legacy `settings.yaml` compatibility
 - **Stability**: cold-session injection, target-session activity, audit report and credentials fixes
-- **Later**: A2A direct channel, full in-panel web terminal, more role skills & audit dimensions
+- **v1.5 (planned)**: A2A direct channel as the mainline, in-panel WebTTY and role skills/audit dimensions in parallel, optional memory archive
 
 See [ROADMAP.md](ROADMAP.md), [Milestones](https://github.com/dawn-471/MMCAS/milestones) and the Issues.
 
