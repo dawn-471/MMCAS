@@ -25,6 +25,7 @@ window.__ModuleLoader__.load({
       ".mmcas-dot{width:8px;height:8px;border-radius:50%;display:inline-block}",
       ".mmcas-dot.on{background:#5fd38a}.mmcas-dot.off{background:#ff7d6b}",
       ".mmcas-empty{color:var(--dsw-alias-label-tertiary,#6a7282);font-size:12px;padding:6px 0}",
+      ".mmcas-empty.warn{color:#ffb84d}",
       ".mmcas-mem{border-bottom:1px dashed var(--dsw-alias-border-l3,#2a2f3c);padding:7px 0;font-size:12px;color:var(--dsw-alias-label-secondary,#8a94a6);line-height:1.5}",
       ".mmcas-mem .r{color:var(--dsw-alias-label-tertiary,#6a7282);font-size:10.5px}",
       ".mmcas-mem-search{display:flex;gap:6px;margin:8px 0 12px;flex-wrap:wrap;align-items:center}",
@@ -241,8 +242,9 @@ window.__ModuleLoader__.load({
 
       // ---- v1.2：消息区（notices：收发件箱 + ack） ----
       var _nt = useState(null), notices = _nt[0], setNotices = _nt[1];
-      var _ntf = useState({ to: "coder", kind: "info", urgency: "normal", scope: "", body: "" }), nForm = _ntf[0], setNForm = _ntf[1];
+      var _ntf = useState({ to: "coder", kind: "info", urgency: "normal", scope: "", body: "", preferA2A: true }), nForm = _ntf[0], setNForm = _ntf[1];
       var _ntb = useState(false), ntBusy = _ntb[0], setNtBusy = _ntb[1];
+      var _ntm = useState(""), ntMsg = _ntm[0], setNtMsg = _ntm[1];
       function loadNotices() {
         fetch(API + "/api/notices").then(function (r) { return r.json(); }).then(function (s) { setNotices((s && s.items) || []); }).catch(function () {});
       }
@@ -250,15 +252,39 @@ window.__ModuleLoader__.load({
       function sendNotice() {
         if (!nForm.body.trim()) return;
         setNtBusy(true);
-        apiCall("POST", "/api/notices", nForm).then(function (r) { setNtBusy(false); if (r && r.ok) { setNForm({ ...nForm, body: "", scope: "" }); loadNotices(); } }).catch(function () { setNtBusy(false); });
+        setNtMsg("");
+        var endpoint = nForm.preferA2A ? "/api/a2a/send" : "/api/notices";
+        apiCall("POST", endpoint, nForm).then(function (r) {
+          setNtBusy(false);
+          if (r && r.ok) {
+            var mode = r.mode || "notice";
+            setNtMsg(mode === "notice" && nForm.preferA2A
+              ? ("A2A 不可达，已回落 notices: " + (r.id || "") + (r.error ? "（" + r.error + "）" : ""))
+              : ("已发送 " + mode + " " + (r.id || "")));
+            setNForm({ ...nForm, body: "", scope: "" });
+            loadNotices();
+          } else {
+            setNtMsg((r && r.error) || "发送失败");
+          }
+        }).catch(function (e) { setNtBusy(false); setNtMsg("请求失败: " + e); });
       }
       function ackNotice(id) { apiCall("POST", "/api/notices/ack", { id: id }).then(function () { loadNotices(); }); }
       var KIND_LABEL = { ruling: "裁决请求", error: "错误上报", stop: "停止指令", info: "一般" };
       var myRoleN = (state && state.role) || "coder";
       var noticeTargets = myRoleN === "modeler" ? ["coder", "writer", "modeler", "all"] : ["modeler"];
       var inboxList = (notices || []).filter(function (n) { return n.to === myRoleN || n.to === "all" || n.from === myRoleN; }).slice(0, 12);
+      var a2a = state && state.a2a;
+      var a2aLine = el("div", { className: "mmcas-empty" + (a2a && a2a.running ? "" : " warn") },
+        a2a
+          ? ("A2A：" + (a2a.running
+            ? ("运行中 " + a2a.bind + ":" + a2a.port + (a2a.loopbackOnly ? "（仅本机）" : "") + " · peer " + a2a.peersOnline + "/" + a2a.peersTotal + " 在线 · 收 " + a2a.received + " / 发 " + a2a.sent + (a2a.fallback ? " / 回落 " + a2a.fallback : ""))
+            : ("未启用" + (a2a.error ? "（" + a2a.error + "）" : ""))))
+          : "A2A：读取中…");
       var noticesUi = el(Fragment, null,
-        el("div", { className: "mmcas-sec" }, "消息（跨端通知 / 停止指令 / 回执）"),
+        el("div", { className: "mmcas-sec" }, "消息（A2A 直连 / notices 回落 / 回执）"),
+        el("div", { className: "mmcas-row" },
+          a2aLine,
+          el("button", { className: "mmcas-btn-ghost", onClick: function () { apiCall("POST", "/api/a2a/refresh", {}).then(function () { loadNotices(); }); } }, "刷新 A2A")),
         el("div", { className: "mmcas-row" },
           el("select", { className: "mmcas-select", style: { width: "96px", flex: "none" }, value: nForm.to, onChange: function (e) { setNForm({ ...nForm, to: e.target.value }); } },
             noticeTargets.map(function (x) { return el("option", { value: x, key: x }, x); })),
@@ -272,8 +298,16 @@ window.__ModuleLoader__.load({
           el("input", { className: "mmcas-input", placeholder: "范围（可选：T-115 或 T-115,T-116——停止某方向时用）", value: nForm.scope, onChange: function (e) { setNForm({ ...nForm, scope: e.target.value }); } })
         ),
         el("textarea", { className: "mmcas-textarea", placeholder: "正文", value: nForm.body, onChange: function (e) { setNForm({ ...nForm, body: e.target.value }); } }),
+        el("label", { className: "mmcas-empty", style: { display: "flex", gap: "6px", alignItems: "center" } },
+          el("input", {
+            type: "checkbox",
+            checked: nForm.preferA2A,
+            onChange: function (e) { setNForm({ ...nForm, preferA2A: e.target.checked }); }
+          }),
+          "优先 A2A 直连（失败自动回落 notices）"),
         el("div", { className: "mmcas-row", style: { marginTop: "8px" } },
           el("button", { className: "mmcas-btn-primary", disabled: ntBusy, onClick: sendNotice }, ntBusy ? "发送中…" : "发送")),
+        ntMsg ? el("div", { className: "mmcas-empty" }, ntMsg) : null,
         inboxList.length ? inboxList.map(function (n) {
           var mine = n.to === myRoleN || n.to === "all";
           return el("div", { className: "mmcas-mem", key: n.id },

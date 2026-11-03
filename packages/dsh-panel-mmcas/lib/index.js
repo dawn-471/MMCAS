@@ -34,6 +34,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { handleMemorySearch } from './memory-api.mjs';
+import { loadA2ACore } from './a2a-core.mjs';
 
 export const name = 'mmcas-dsh-panel';
 export const inject = ['clientModules', 'sessions', 'agents', 'sessionController', 'tokenMeter'];
@@ -46,6 +47,16 @@ export function apply(ctx, config = {}) {
   const ws = (config.workspaceDir || process.env.MMCAS_WORKSPACE || '').replace(/\\/g, '/');
   const role = config.role || 'modeler'; // modeler=Master 全功能；coder/writer=Slave 仅看板+记忆
   const local = String(config.localDir || path.join(os.homedir(), 'AppData', 'Local', 'mmcas')).replace(/\\/g, '/');
+  const a2aCfg = config.a2a === false ? { enabled: false } : (config.a2a && typeof config.a2a === 'object' ? config.a2a : {});
+  const a2aState = {
+    enabled: false, running: false, error: null, role,
+    bind: '', port: Number(a2aCfg.port || config.a2aPort || 19400),
+    peers: {}, peersOnline: 0, peersTotal: 0, source: null,
+    sent: 0, fallback: 0, lastSentAt: null,
+  };
+  let a2aModules = null;
+  let a2aServer = null;
+  let a2aTimer = null;
 
   // ---------- git 同步（看板刷新的数据来源：coder/writer 端的卡变更经远端仓进来） ----------
   const syncCfg = {
@@ -298,6 +309,7 @@ export function apply(ctx, config = {}) {
   function collectState() {
     return {
       role, cards: loadCards(), git: gitInfo(), devices: devices(), memory: memoryEntries(),
+      a2a: a2aSnapshot(),
       sync: { ...syncState, heartbeat: syncHeartbeat() }, syncIntervalSec: syncCfg.intervalSec,
       wipLimit: WIP_LIMIT,                                        // v1.2：面板徽标（0=不限制）
       poller: { enabled: poller.enabled, intervalSec: poller.intervalSec, autoClaim: poller.autoClaim,
@@ -699,6 +711,202 @@ export function apply(ctx, config = {}) {
       try { if (ctx.logger) ctx.logger.warn('[mmcas-notices] 消费异常:', String(e)); } catch {}
     }
     return res;
+  }
+
+  function createNotice(payload) {
+    const to = String(payload.to || '').trim();
+    if (!['modeler', 'coder', 'writer', 'all'].includes(to)) throw new Error(`非法收件方: ${to}（modeler|coder|writer|all）`);
+    const kind = ['ruling', 'error', 'stop', 'info'].includes(String(payload.kind)) ? String(payload.kind) : 'info';
+    const urgency = payload.urgency === 'urgent' ? 'urgent' : 'normal';
+    const scope = String(payload.scope || '').trim();
+    const body = String(payload.body || '').trim();
+    if (!body) throw new Error('body 必填');
+    const dir = NOTICES_DIR();
+    mkdirSync(dir, { recursive: true });
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const id = 'N-' + now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate()) + '-' + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds()) + '-' + Math.random().toString(36).slice(2, 4);
+    const rec = { id, from: role, to, kind, urgency, scope, status: 'pending', at: now.toISOString() };
+    const text = '---\n' + Object.entries(rec).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n## 正文\n' + body + '\n';
+    writeFileSync(path.join(dir, id + '.md'), text);
+    return rec;
+  }
+
+  function a2aToken() {
+    if (a2aCfg.token) return String(a2aCfg.token).trim();
+    if (process.env.MMCAS_A2A_TOKEN) return String(process.env.MMCAS_A2A_TOKEN).trim();
+    try {
+      const file = path.join(local, 'a2a-token.txt');
+      if (existsSync(file)) return readFileSync(file, 'utf8').trim();
+    } catch {}
+    return '';
+  }
+
+  function a2aNoticeKind(kind) {
+    return ['stop', 'error', 'ruling', 'info'].includes(String(kind)) ? String(kind) : 'info';
+  }
+
+  function a2aSnapshot() {
+    const serverState = a2aServer && typeof a2aServer.status === 'function' ? a2aServer.status() : {};
+    return {
+      enabled: a2aState.enabled,
+      running: a2aState.running,
+      bind: serverState.bind || a2aState.bind,
+      port: serverState.port || a2aState.port,
+      loopbackOnly: (serverState.bind || a2aState.bind) === '127.0.0.1',
+      role,
+      source: a2aState.source,
+      sourceError: a2aState.sourceError || null,
+      peers: a2aState.peers,
+      peersOnline: a2aState.peersOnline,
+      peersTotal: a2aState.peersTotal,
+      received: serverState.received || 0,
+      accepted: serverState.accepted || 0,
+      duplicates: serverState.duplicates || 0,
+      rejected: serverState.rejected || 0,
+      failures: serverState.failures || 0,
+      sent: a2aState.sent,
+      fallback: a2aState.fallback,
+      lastAt: serverState.lastAt || null,
+      lastFrom: serverState.lastFrom || null,
+      lastSentAt: a2aState.lastSentAt || null,
+      startedAt: serverState.startedAt || null,
+      error: a2aState.error || serverState.lastError || null,
+    };
+  }
+
+  function applyA2APeers(discovery) {
+    a2aState.source = discovery.source || null;
+    a2aState.sourceError = discovery.error || null;
+    a2aState.peers = discovery.peers || {};
+    const peers = Object.values(a2aState.peers);
+    a2aState.peersTotal = peers.length;
+    a2aState.peersOnline = peers.filter((peer) => peer && peer.online !== false).length;
+  }
+
+  async function refreshA2APeers() {
+    if (!a2aModules) return null;
+    const discovery = a2aModules.discovery.discoverPeers({
+      role,
+      tailscaleBin: a2aCfg.tailscaleBin,
+      peers: a2aCfg.peers,
+    });
+    applyA2APeers(discovery);
+    return discovery;
+  }
+
+  async function handleA2AMessage(rec) {
+    if (!a2aModules) return false;
+    if (rec.kind === 'ping') return true;
+    const text = a2aModules.protocol.formatMessage(rec);
+    const urgent = a2aModules.protocol.isUrgent(rec);
+    const targets = resolveNoticeTargets(rec);
+    if (!targets.length) {
+      const target = pickTargetAgent();
+      if (target) targets.push(target.s.id);
+    }
+    for (const sid of targets) {
+      if (await injectToSession(sid, text, urgent ? 'steer' : 'queue')) return true;
+    }
+    return false;
+  }
+
+  function a2aClientCtx() {
+    return {
+      from: role,
+      token: a2aToken(),
+      port: a2aState.port,
+      peers: a2aState.peers,
+      timeoutMs: Number(a2aCfg.timeoutMs || 3000),
+      retries: Number(a2aCfg.retries === undefined ? 1 : a2aCfg.retries),
+    };
+  }
+
+  async function sendA2AMessage(payload) {
+    const fallback = (reason) => {
+      const rec = createNotice({
+        to: payload.to,
+        kind: a2aNoticeKind(payload.kind),
+        urgency: payload.urgency,
+        scope: payload.scope,
+        body: '（A2A ' + (reason || '不可达') + '，已回落文件通道）\n' + payload.body,
+      });
+      a2aState.fallback++;
+      return { ok: true, mode: 'notice', id: rec.id, error: reason || null };
+    };
+    if (!a2aState.running || !a2aModules) return fallback(a2aState.error || '未运行');
+    try {
+      const result = await a2aModules.client.sendMessage(payload, a2aClientCtx());
+      if (result.ok) {
+        a2aState.sent++;
+        a2aState.lastSentAt = new Date().toISOString();
+        return { ok: true, mode: result.mode || 'a2a', id: result.id, peer: result.peer, results: result.results };
+      }
+      return fallback(result.error || 'A2A 发送失败');
+    } catch (err) {
+      return fallback(err.message);
+    }
+  }
+
+  async function startA2A() {
+    if (a2aCfg.enabled === false) {
+      a2aState.error = 'A2A 已禁用（config.a2a.enabled=false）';
+      return;
+    }
+    const token = a2aToken();
+    if (!token) {
+      a2aState.error = '未配置 a2a-token.txt（A2A 关闭，notices 仍可用）';
+      return;
+    }
+    try {
+      a2aModules = await loadA2ACore(config.coreDir);
+      const discovery = a2aModules.discovery.discoverPeers({
+        role,
+        tailscaleBin: a2aCfg.tailscaleBin,
+        peers: a2aCfg.peers,
+      });
+      applyA2APeers(discovery);
+      const port = Number(a2aCfg.port || config.a2aPort || 19400);
+      let bind = String(a2aCfg.bind || discovery.self.ip || '127.0.0.1');
+      const build = async (bindAddress) => {
+        const server = a2aModules.server.createA2AServer({
+          role,
+          token,
+          bind: bindAddress,
+          port,
+          stateFile: path.join(local, 'a2a-state.json'),
+          peerRoles: discovery.peers,
+          rateLimitPerMin: Number(a2aCfg.rateLimitPerMin || 120),
+          maxBodyBytes: Number(a2aCfg.maxBodyBytes || 65536),
+          onMessage: handleA2AMessage,
+          log: (level, msg) => {
+            try { if (ctx && ctx.logger && typeof ctx.logger[level] === 'function') ctx.logger[level]('[mmcas-a2a] ' + msg); } catch {}
+          },
+        });
+        const address = await server.start();
+        return { server, address };
+      };
+      let booted;
+      try {
+        booted = await build(bind);
+      } catch (err) {
+        if (bind === '127.0.0.1') throw err;
+        bind = '127.0.0.1';
+        booted = await build(bind);
+      }
+      a2aServer = booted.server;
+      a2aState.enabled = true;
+      a2aState.running = true;
+      a2aState.bind = bind;
+      a2aState.port = booted.address.port || port;
+      a2aState.error = null;
+      a2aTimer = setInterval(() => { refreshA2APeers().catch(() => {}); }, 60000);
+      if (a2aTimer.unref) a2aTimer.unref();
+    } catch (err) {
+      a2aState.enabled = false;
+      a2aState.running = false;
+      a2aState.error = String(err.message || err).slice(0, 200);
+    }
   }
 
   // ---------- v1.2：独立审计（W4：经本地桥的第三方专家审计） ----------
@@ -1146,6 +1354,42 @@ export function apply(ctx, config = {}) {
 
     if (p === '/api/state' && req.method === 'GET') return json(res, 200, collectState());
 
+    if (p === '/api/a2a/status' && req.method === 'GET') {
+      return json(res, 200, { ok: true, ...a2aSnapshot() });
+    }
+    if (p === '/api/a2a/refresh' && req.method === 'POST') {
+      await refreshA2APeers();
+      return json(res, 200, { ok: true, ...a2aSnapshot() });
+    }
+    if (p === '/api/a2a/send' && req.method === 'POST') {
+      const b = await readBody(req);
+      if (b.__badEncoding) return json(res, 400, { ok: false, error: '请求内容编码损坏（非 UTF-8），已拒绝' });
+      if (b.__parseFail) return json(res, 400, { ok: false, error: '请求体解析失败' });
+      const to = String(b.to || '').trim();
+      if (!['modeler', 'coder', 'writer', 'all'].includes(to)) {
+        return json(res, 400, { ok: false, error: `非法收件方: ${to}（modeler|coder|writer|all）` });
+      }
+      if (role !== 'modeler' && to !== 'modeler') {
+        return json(res, 403, { ok: false, error: 'Slave 端只能向 Modeler 发送消息' });
+      }
+      const kind = String(b.kind || 'info');
+      if (!['ping', 'query', 'reply', 'task-handoff', 'stop', 'error', 'ruling', 'info'].includes(kind)) {
+        return json(res, 400, { ok: false, error: '非法 kind: ' + kind });
+      }
+      const body = String(b.body || '').trim();
+      if (!body) return json(res, 400, { ok: false, error: 'body 必填' });
+      const urgency = b.urgency === 'urgent' || kind === 'stop' ? 'urgent' : 'normal';
+      const result = await sendA2AMessage({
+        to,
+        kind,
+        urgency,
+        scope: String(b.scope || '').trim(),
+        body,
+        ttl: Number(b.ttl || 3600),
+      });
+      return json(res, 200, result);
+    }
+
     if (p === '/api/memory/search' && req.method === 'GET') {
       const out = await handleMemorySearch(ws, url.searchParams);
       return json(res, out.status, out.body);
@@ -1198,20 +1442,12 @@ export function apply(ctx, config = {}) {
       if (!['modeler', 'coder', 'writer', 'all'].includes(to)) return json(res, 400, { ok: false, error: `非法收件方: ${to}（modeler|coder|writer|all）` });
       // 权限：Master 可对任意端；Slave 只能对 Modeler
       if (role !== 'modeler' && to !== 'modeler') return json(res, 403, { ok: false, error: 'Slave 端只能向 Modeler 发送消息' });
-      const kind = ['ruling', 'error', 'stop', 'info'].includes(String(b.kind)) ? String(b.kind) : 'info';
-      const urgency = b.urgency === 'urgent' ? 'urgent' : 'normal';
-      const scope = String(b.scope || '').trim();
-      const body = String(b.body || '').trim();
-      if (!body) return json(res, 400, { ok: false, error: 'body 必填' });
-      const dir = NOTICES_DIR();
-      mkdirSync(dir, { recursive: true });
-      const now = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      const id = 'N-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds()) + '-' + Math.random().toString(36).slice(2, 4);
-      const rec = { id, from: role, to, kind, urgency, scope, status: 'pending', at: now.toISOString() };
-      const text = '---\n' + Object.entries(rec).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n## 正文\n' + body + '\n';
-      writeFileSync(path.join(dir, id + '.md'), text);
-      return json(res, 200, { ok: true, id });
+      try {
+        const rec = createNotice(b);
+        return json(res, 200, { ok: true, id: rec.id });
+      } catch (err) {
+        return json(res, 400, { ok: false, error: err.message });
+      }
     }
     if (p === '/api/notices/ack' && req.method === 'POST') {
       const b = await readBody(req);
@@ -1512,9 +1748,12 @@ export function apply(ctx, config = {}) {
     if (ctx && ctx.logger) ctx.logger.warn('[mmcas-panel] 数据服务监听失败（可能另一实例已占用）:', e.code || e.message);
   });
   server.listen(dataPort, '127.0.0.1');
+  startA2A().catch((err) => { a2aState.error = String(err.message || err).slice(0, 200); });
   if (ctx && typeof ctx.on === 'function') ctx.on('dispose', () => {
     if (syncTimer) clearInterval(syncTimer);
     if (pollerTimer) clearInterval(pollerTimer);
+    if (a2aTimer) clearInterval(a2aTimer);
+    if (a2aServer) a2aServer.stop().catch(() => {});
     releasePollerLock();
     server.close();
   });

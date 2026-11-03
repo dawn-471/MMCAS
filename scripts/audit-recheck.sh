@@ -9,7 +9,19 @@ check() {
   if [ -e "$ROOT/$1" ]; then pass=$((pass + 1)); echo "  PASS  $1${2:+  — $2}";
   else fail=$((fail + 1)); echo "  FAIL  $1${2:+  — $2}"; fi
 }
-echo "== MMCAS v1.4 包内容复查: $ROOT =="
+echo "== MMCAS v1.5 包内容复查: $ROOT =="
+# v1.5 新增
+check "pkg/core/a2a/a2a-protocol.mjs" "A2A 协议"
+check "pkg/core/a2a/a2a-discovery.mjs" "A2A peer 发现"
+check "pkg/core/a2a/a2a-server.mjs" "A2A 服务端"
+check "pkg/core/a2a/a2a-client.mjs" "A2A 客户端"
+check "pkg/core/a2a/a2a.mjs" "A2A CLI"
+check "pkg/core/a2a/test-a2a.mjs" "A2A 核心测试"
+check "pkg/core/a2a/test-a2a-cli.mjs" "A2A CLI 测试"
+check "pkg/core/enable-a2a.ps1" "A2A 防火墙规则"
+check "pkg/secrets/a2a-token.txt" "A2A 团队 token"
+check "pkg/plugins/dsh-panel-mmcas/lib/a2a-core.mjs" "面板 A2A 适配层"
+check "pkg/plugins/dsh-panel-mmcas/test/test-a2a-api.mjs" "面板 A2A 测试"
 # v1.4 新增
 check "pkg/core/memory/memory-index.mjs" "记忆向量索引（本地缓存）"
 check "pkg/core/memory/memory-search.mjs" "记忆检索（word/vector/hybrid/semantic）"

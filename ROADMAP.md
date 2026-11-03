@@ -1,7 +1,7 @@
 # Roadmap
 
 > 本文件与 GitHub 的 [Milestones](https://github.com/dawn-471/MMCAS/milestones) / Issues 同步维护。
-> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　开发线：**v1.4（功能完成，待发布）→ v1.5（规划中）**
+> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　开发线：**v1.4（功能完成，待发布）→ v1.5（进行中，A2A MVP 已落地）**
 
 ## v1.3 · dsh 0.2.1 适配（已发布，2026-10-29 / tag `v1.3.0`）
 
@@ -26,34 +26,35 @@
 - [x] **回归**：87 项记忆相关单测（基础 28 / 语义 26 / sqlite-vec 17 / 面板 16），覆盖 mock embeddings、批量、鉴权、回退、KNN、元数据过滤、BOM、缓存
 - [ ] **记忆归档工具**：按角色/日期归档旧文件（可选，延后到 v1.5）
 
-## v1.5 · A2A 直连通道（规划中，2026-11 起）
+## v1.5 · A2A 直连通道（进行中，2026-11-03）
 
 > 主线：Agent 间实时直连（A2A），补足 git / notices 文件通道的时延；并行：面板 WebTTY、角色技能与审计维度；可选：记忆归档。原则不变：零注册、Tailscale 组网、凭证不入仓、人类在环。
 
 ### M0 · 设计冻结（约 1 周）
 
-- [ ] **A2A 协议 v1**：envelope `{id, from, to, kind, scope, body, at, replyTo, ttl}`；类型 `ping / query / reply / task-handoff / stop / broadcast`；幂等键、错误码、消息大小上限
-- [ ] **传输选型**：Tailscale 100.x 直连 + 本地回环 HTTP/WS；端口约定、peer 发现（Tailscale status / `devices.json`）、重连与心跳
-- [ ] **鉴权边界**：Tailscale ACL + 应用层 token 双保险；每角色独立 token、可吊销；拒绝未知 peer；日志脱敏
-- [ ] **降级契约**：A2A 超时/离线 ⇒ 自动回落 `notices/` 文件通道（沿用现有语义、去重与回执）
-- [ ] **入口草图**：`a2a.mjs` CLI + 面板总控通道状态/消息区；测试矩阵与验收清单
+- [x] **A2A 协议 v1**：envelope `{v, id, from, to, kind, urgency, scope, body, at, replyTo, ttl}`；类型 `ping / query / reply / task-handoff / stop / error / ruling / info`；幂等键、TTL、错误码、消息大小上限（64KB）、非法 from/to/kind 校验
+- [x] **传输选型**：Tailscale 100.x 直连 + HTTP（WS 留作后续）；端口默认 19400（与 web 面板 3210 / 桌面面板 19398 分离）；peer 发现（Tailscale status / 配置覆盖）
+- [x] **鉴权边界**：Tailscale ACL + 应用层团队 token 双保险；拒绝未知 peer/错误 from；日志不打印 token；每角色独立 token 轮换列入 M2
+- [x] **降级契约**：A2A 超时/离线/投递失败 ⇒ 自动回落 `notices/` 文件通道（沿用现有语义、去重与回执）
+- [x] **入口草图**：`a2a.mjs` CLI（send/ping/status/peers/config）+ 面板总控 A2A 状态与发送；测试矩阵与验收清单
 
 ### M1 · A2A MVP（约 2 周）
 
-- [ ] **服务端**：`packages/core/a2a/a2a-server.mjs`（监听、鉴权、幂等、离线队列、速率限制、心跳）
-- [ ] **客户端**：`packages/core/a2a/a2a-client.mjs`（send/query/reply/ping/status；超时、重试、退避）
-- [ ] **会话注入**：query/task-handoff 按 urgency 走 followup/steer，复用 poller 注入与去重（不重复认领）
-- [ ] **notices 降级**：不可达自动写 notices；恢复后可选补投；回执状态一致
-- [ ] **面板 + CLI**：在线 peer / 延迟 / 失败 / 队列深度；消息收发入口
-- [ ] **测试**：本地双实例 loopback 覆盖 ping/query/reply/幂等/超时/降级；非法输入与重放防护
+- [x] **服务端**：`packages/core/a2a/a2a-server.mjs`（监听、Bearer 鉴权、幂等去重、TTL、速率限制、状态落盘、IP→role 校验）
+- [x] **客户端**：`packages/core/a2a/a2a-client.mjs`（send/broadcast/ping/status；超时、重试、失败分类）
+- [x] **会话注入**：query/task-handoff/stop 按 urgency 走 followup/steer，复用 poller 注入与 scope→会话解析
+- [x] **notices 降级**：不可达/503 自动写 notices（保留 kind/urgency/scope）；面板与 CLI 均显式提示回落
+- [x] **面板 + CLI**：在线 peer / 收发/失败/回落计数；消息收发入口；桌面端沿用同一面板宿主与端口
+- [x] **测试**：44 项 A2A 测试（核心 18 / 面板适配 10 / 面板集成 9 / CLI 7），覆盖 ping/query/幂等/超时/限流/非法输入/降级
 
 ### M2 · A2A 加固（约 1–2 周）
 
-- [ ] **鉴权轮换与最小权限**：角色 token 生成/轮换/吊销；拒绝未知 peer 与过期 token
-- [ ] **稳定性**：重连、心跳、背压、消息分片或拒绝、速率限制、队列上限
-- [ ] **可观测**：延迟/成功率/队列深度；面板告警；日志脱敏
-- [ ] **打包安装**：setup 生成 token、写配置、启动器接线；`audit-recheck.sh` 校验
-- [ ] **实机演练**：三端 Tailscale 下 A2A ⇄ notices 故障切换；断网/重启/重复投递
+- [ ] **鉴权轮换与最小权限**：每角色独立 token、轮换/吊销（当前为团队共享 token）
+- [x] **稳定性（基础）**：幂等、TTL、速率限制、状态落盘、Broken peer 自动回落
+- [ ] **稳定性（补强）**：重连/心跳、背压、消息分片、离线队列上限
+- [x] **可观测**：面板显示 peer 在线数、收/发/失败/回落计数与最近错误；日志不打印 token
+- [x] **打包安装**：`pack.mjs` 生成/注入团队 token，`setup.bat` 复制 token + 防火墙规则，`write-config` 写 `a2aPort`（web/desktop 均生效），`audit-recheck.sh` 校验
+- [ ] **实机演练**：三端 Tailscale 下 A2A ⇄ notices 故障切换；断网/重启/重复投递；Slave→Master 19400 ACL 放行
 
 ### M3 · 并行项（可与 M1/M2 并行）
 
@@ -64,19 +65,22 @@
 
 ### v1.5 验收标准
 
-- [ ] **A2A**：同 tailnet 两端 ping/query < 2s；超时自动回落 notices；未知 peer/错误 token 100% 拒绝；双实例回归全绿
-- [ ] **面板**：通道状态可见、消息可发可收；离线/降级显式提示
+- [x] **A2A（本地）**：loopback 双实例 ping/query/幂等/限流/错误 token 拒绝/降级全通过
+- [ ] **A2A（实机）**：同 tailnet 两端 ping/query < 2s；Slave→Master 19400 ACL 放行；三端演练
+- [x] **面板**：通道状态可见、消息可发可收；离线/降级显式提示（含桌面端）
 - [ ] **WebTTY**：Master 可在面板执行交互式命令，命令审计落盘；Slave 不可入站
 - [ ] **技能/审计**：新增内容有模板、示例与测试；旧包兼容
-- [ ] **回归**：A2A + notices + poller + memory + audit 全绿；三端重打包与演练通过
-- [ ] **文档**：design（新增 A2A 章节）/ ROADMAP / secrets-registry / README 同步
+- [x] **回归（本地）**：A2A + notices + poller + memory + audit 全绿
+- [ ] **回归（发行）**：三端重打包与实机演练通过
+- [x] **文档**：design §17 / ROADMAP / secrets-registry / README / core README 同步
 
 ### 风险与约束
 
-- dsh 预览期 API 变动：A2A 走独立进程 + 本地 HTTP/WS，减少对 dsh 内部接口的耦合
+- dsh 预览期 API 变动：A2A 走独立模块 + 本地 HTTP，减少对 dsh 内部接口的耦合；消息注入复用面板宿主
 - Windows PTY 需原生依赖；失败则降级为半交互 WebTTY，不阻塞主线
-- Tailscale ACL / 端口策略需部署者配合；零注册原则不变
-- 消息风暴/重放：幂等键 + TTL + 速率限制 + token
+- Tailscale ACL / 端口策略需部署者配合：需放行 Slave→Master TCP 19400（仅 A2A 消息，非远程控制）；零注册原则不变
+- 消息风暴/重放：幂等键 + TTL + 速率限制 + token；当前 token 为团队共享，轮换/吊销列入 M2
+- 桌面端：A2A 运行在面板宿主内，使用同一 token 文件与 19400 端口，与面板数据端 19398 分离
 - **不在 v1.5 范围**：跨 tailnet 联邦、公网中继、完整 RBAC、独立中心服务
 
 ## v1.2 · 实战修订（已完成，2026-09-16 发布）
@@ -98,8 +102,8 @@
 
 ## English
 
-- Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (planned).
-- **v1.5 (planned)**: A2A realtime direct channel as the mainline — Tailscale 100.x + local HTTP/WS, peer discovery, per-role token auth, idempotency/TTL/rate limits, session injection (followup/steer), automatic `notices/` fallback, panel/CLI status and tests. Parallel: in-panel WebTTY (Windows PTY spike first, semi-interactive fallback), 2–3 role skills, 1–2 audit dimensions, optional memory archive. Milestones M0 design freeze → M1 MVP → M2 hardening → M3 parallel items; acceptance criteria include <2s ping/query, 100% rejection of unknown peers/bad tokens, three-end drill, and full regression.
+- Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (in progress; A2A MVP shipped locally).
+- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, team-token auth, idempotency/TTL/rate limits/state persistence, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config`), panel status/send, desktop-compatible; 44 A2A tests (core 18 / adapter 10 / panel 9 / CLI 7). Remaining: per-role token rotation, reconnect/heartbeat/backpressure, real three-end Tailscale drill + Slave→Master 19400 ACL, WebTTY, role skills/audit dimensions, optional memory archive.
 - **v1.4 (feature-complete)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; 87-test regression.
 - **v1.3 (shipped)**: full dsh 0.2.1 support for CLI and Desktop; merge-based profile configuration; one-click Desktop onboarding (`MMCAS-Desktop`, isolated `DSH_HOME`, panel 19398); standard preset sync (`time-context` / `tool-schedule`); reviewer config migration to `reviewer.json` with legacy `settings.yaml` / `.imported` compatibility; cold-session injection, target-session activity, audit report naming, credentials refs, and localized New Session fixes; full regression.
 - **v1.2 (shipped)**: scheduler core hardening (auto-claim poller into the mainline, fix duplicate/stale dispatch, remove the hard WIP cap, regression tests); sessions & context (enable built-in compaction, per-task session lifecycle, context waterline warnings); cross-end messaging & governance (notices, stop commands, return cards, rework flow); independent audit instance (one-click third-party audits via a local bridge); sync infra (v0.2.1 rollout, migration self-check, watchdog); packaging & defaults.

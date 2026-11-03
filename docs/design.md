@@ -2,7 +2,7 @@
 
 > Mathematical Modeling Competition Assistance System（数学建模竞赛辅助系统）
 > 2026-09-08 初稿 / v1.1 开工修订 / v1.2 赛后实战修订 / v1.3 dsh 0.2.1 适配 / v1.4 向量记忆检索。
-> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」完成；v1.3.0 dsh 0.2.1（CLI + 桌面端）适配已发布（tag `v1.3.0`）；v1.4 向量记忆检索功能完成（待发布）；v1.5 A2A 直连规划中（见 ROADMAP）。
+> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」完成；v1.3.0 dsh 0.2.1（CLI + 桌面端）适配已发布（tag `v1.3.0`）；v1.4 向量记忆检索功能完成（待发布）；v1.5 A2A 直连 MVP 已落地（进行中，见 §17 / ROADMAP）。
 
 ## 0. 项目定位
 
@@ -33,7 +33,7 @@
 | 层 | 组件 | 职责 | 备注 |
 |---|---|---|---|
 | 状态同步 | git（GitHub 私有仓） | 工作区/任务卡/记忆文件同步 + 版本历史 | 事实源；git 走 ssh.github.com:443；Gitee 备选 |
-| 控制通道 | Tailscale | Master→Slave SSH、Slave 互控、将来 A2A 直连 | pre-auth key 预授权，ACL 即互控开关 |
+| 控制通道 | Tailscale | Master→Slave SSH、Slave 互控、**A2A 直连（v1.5，HTTP 19400）** | pre-auth key 预授权，ACL 即互控开关；A2A 需放行 Slave→Master 19400 |
 | 大文件 | 网盘（可选） | 数据集、大附件 | 由部署者自配 |
 
 NAT 现实：三台设备均不可入站（双 NAT / 校园网），一切直连必须经 Tailscale 组网。
@@ -119,7 +119,7 @@ git 保底：冲突永不静默丢失，冲突文件由人类裁决。
 
 ### 5.1 包结构（开发仓 packages/ 下）
 
-- `packages/core`（共享）：同步守护、provider 管理、任务卡插件、**记忆文件流与向量检索（v1.4）**、A2A（槽位）、SSH 工具、**审计工具链（v1.2）**、**notices CLI（v1.2）**。
+- `packages/core`（共享）：同步守护、provider 管理、任务卡插件、**记忆文件流与向量检索（v1.4）**、**A2A 直连（v1.5）**、SSH 工具、**审计工具链（v1.2）**、**notices CLI（v1.2）**。
 - role 层（互不相同）：role.md（人格；装机时注入 dsh——0.2.x 起 = system-prompt.personaPrefix + preset-standard persona 覆盖）、skills/、tools 白名单、模型配置。
   - `packages/modeler`（Master）：数学建模知识库、文献、建模方法论。
   - `packages/coder`：数值计算、优化求解、并行/长任务队列、可视化。
@@ -208,7 +208,7 @@ default: deepseek
 
 - 定位：dsh 侧栏内嵌抽屉，**不是独立服务**；数据走 host 插件回环 HTTP（web：127.0.0.1:3210，端口可配，web 端口 +11 约定；桌面端：固定 19398，dsh-app:// 无端口）。
 - **按钮（三端一致）**：总控 / 任务看板 / 共享记忆（v1.4 含搜索）/ **审计室**。
-- **总控抽屉**：同步水位 + 成员设备 + **上下文水位**（v1.2）+ **消息区（notices）**（v1.2）+ 环境同步区 + 操控门户（仅 Master）。
+- **总控抽屉**：同步水位 + 成员设备 + **上下文水位**（v1.2）+ **消息区（A2A / notices）**（v1.5）+ 环境同步区 + 操控门户（仅 Master）。
 - **任务看板**：三列板（priority 排序）+ 新建/编辑/详情（DAG 门控 + 权限护栏）+ **30s 自动 git 同步**（fetch → 落后则 merge（快进优先）→ 领先则 push；单飞——定时器与 HTTP 共用一次同步；默认不 add/commit 以免与守护抢锁；冲突/失败显式上报）+「刷新」「立即同步」按钮 + WIP 计数显示（限制可配，默认不限）。
 - **调度核心（自动接取 v2，进主线）**：
   - autoClaim：轮询器按规则**自动认领**（todo→doing 写盘）+ 向目标会话注入接取报文（"已自动接取…不要重复认领"）；`autoClaim` 可回退为"只提醒不翻牌"。
@@ -267,6 +267,16 @@ default: deepseek
 - **Phase 3**：面板「共享记忆」搜索框、模式/角色筛选、分数与降级提示；`GET /api/memory/search` 三端一致。
 - **回归**：87 项记忆相关单测（基础 28 / 语义 26 / sqlite-vec 17 / 面板 16）。
 
+### v1.5 A2A 直连通道（MVP 已落地，2026-11-03）
+
+- **核心**：`packages/core/a2a/`（protocol / discovery / server / client / CLI），HTTP 端口 19400，Tailscale 100.x 直连。
+- **协议**：`{v,id,from,to,kind,urgency,scope,body,at,replyTo,ttl}`；幂等、TTL、64KB 上限、from/to/kind 校验。
+- **鉴权**：团队 token（包内注入 / 环境变量 / `<MMCAS_HOME>/a2a-token.txt`）+ Tailscale ACL；IP→role 校验。
+- **投递**：面板宿主内 A2A 服务收到消息后复用 `injectToSession`（urgent/stop=steer，其余 queue）；失败/离线自动回落 `notices/`。
+- **入口**：`a2a.mjs send/ping/status/peers/config`；面板总控 A2A 状态 + 消息发送（优先 A2A，失败回落）。
+- **桌面端**：A2A 随面板宿主启动，token 路径与端口一致；面板数据端仍为 19398，A2A 19400。
+- **回归**：44 项 A2A 测试（核心 18 / 适配 10 / 面板 9 / CLI 7）；实机 tailnet 演练与每角色 token 轮换待 M2。
+
 ### v1.2 实战修订（已完成，2026-09-16 发布）
 
 来源：实战反馈（建议书十项）+ 队友端回收材料分析。六个工作流（W0–W6，详见 ROADMAP 与项目管理条目）：
@@ -291,7 +301,7 @@ default: deepseek
 - **凭证零入库**：所有 key/token 只存在于本地配置文件（.gitignore 覆盖）或环境变量；代码只读配置，仓库永远只有 `*.example` 占位。开源 = 零改动。
 - **暴露面登记**：所有涉及凭证的位置、性质、开源前处理方式统一登记于 `docs/secrets-registry.md`，新增凭证渠道必须先登记。
 - **开源路线**：完成且运行良好后开源到 GitHub；开源前执行：脱敏 docs（人员/设备/地点）、清 git 历史中的敏感信息（如有）、README 只写功能与差异。
-- **发布状态**：v1.2.0 与 v1.3.0 已开源（MIT）；v1.3.0 tag 指向 dsh 0.2.1 适配完成点；v1.4 功能已完成、待发布。后续修订按 Milestone 推进，每次发布重复上述检查。
+- **发布状态**：v1.2.0 与 v1.3.0 已开源（MIT）；v1.3.0 tag 指向 dsh 0.2.1 适配完成点；v1.4 功能已完成、待发布；v1.5 A2A MVP 已落地（本地回归通过，实机演练待完成）。后续修订按 Milestone 推进，每次发布重复上述检查。
 
 ## 12. 会话生命周期与上下文（v1.2）
 
@@ -433,3 +443,67 @@ node memory-index.mjs --workspace <ws> --stats [--stale-days N] [--json]
 - 面板「共享记忆」抽屉：搜索框 + 模式/角色筛选 + 分数 + 降级提示；无查询时显示最近条目。
 - 维护：`--stats --stale-days N` 输出 `staleDocs / staleCutoff / oldestDate`（非破坏性提示）；归档工具留作可选后续。
 - 打包：`download-vendor.sh` 从 npmmirror 拉取 `sqlite-vec-windows-x64@0.1.9`，`pack.mjs` 复制 `vec0.dll` 到 `pkg/core/memory/`，`audit-recheck.sh` 校验记忆模块与测试随包。
+
+## 17. A2A 直连通道（v1.5）
+
+### 17.1 目标与边界
+
+- 目标：在 git / notices 文件通道之外，提供 Agent 间**实时消息**（询问/回复/任务转交/停止/裁决），降低跨端协作时延。
+- 边界：A2A 不是远程控制通道；SSH 仍只用于 Master→Slave 运维。A2A 只传消息，不执行命令。
+- 原则：零注册、Tailscale 组网、凭证不入仓、人类在环；A2A 不可用时必须自动回落 notices，不静默丢消息。
+
+### 17.2 协议 v1
+
+- envelope：`{v:1, id, from, to, kind, urgency, scope, body, at, replyTo?, ttl}`。
+- `id`：`A-YYYYMMDD-HHMMSS-xxxxxx`；`kind`：`ping / query / reply / task-handoff / stop / error / ruling / info`；`urgency`：`normal / urgent`。
+- 校验：from/to/kind/urgency、body 非空且 ≤ 64KB、`at` 合法、`ttl` 1–86400 秒、过期拒绝（30s 时钟容差）、`replyTo` 格式。
+- 幂等：服务端按 `id` 去重（最近 500 条，落盘 `<MMCAS_HOME>/a2a-state.json`）；重复投递返回 `duplicate:true`，不二次注入。
+- 错误码：400 参数、401 鉴权、403 目标/来源不符、410 过期、413 超大、429 限流、503 投递失败。
+
+### 17.3 传输、端口与发现
+
+- 传输：HTTP（`/a2a/v1/ping|status|messages`）；默认端口 **19400**，与 web 面板数据端（3210/3211）和桌面面板数据端（19398）分离。
+- 绑定：优先 Tailscale IPv4；不可用时回退 `127.0.0.1` 并在面板标注（仅本机）。`config.a2a.bind` 可覆盖。
+- 发现：`tailscale status --json` 中 `mmcas-<role>` 主机名 → role/IP；也支持 `config.a2a.peers` 固定映射（`{ip, port?, online?}`）用于离线/测试。主机名不符时必须在 `a2a.peers` 显式配置。
+- 桌面端：A2A 随面板宿主在 Electron 内启动，读取同一 `<MMCAS_HOME>/a2a-token.txt`，端口/防火墙规则与 CLI 端一致；`config.a2aPort` 由 `write-config` 同时写入 web/desktop profile。
+
+### 17.4 鉴权与安全
+
+- Tailscale ACL 负责网络层；应用层要求 `Authorization: Bearer <team token>`，常量时间比较。
+- 团队 token：`pack.mjs` 首次生成并写 `<MMCAS_HOME>/a2a-token.txt`，随包 `secrets/a2a-token.txt`，`setup.bat` 复制到成员机；也可用 `MMCAS_A2A_TOKEN` 覆盖。三端包须在同一构建机打包或复用同一 token 文件，否则 peer 鉴权失败（自动回落 notices）。
+- IP→role 校验：服务端按发现结果拒绝 `from` 与来源 IP 不匹配的消息；未知 peer 不投递。
+- 速率限制：默认 120 条/分钟/IP；超出 429。日志不打印 token。
+- 防火墙：`enable-a2a.ps1` 创建入站规则，仅允许 `100.64.0.0/10` 访问 TCP 19400；Tailscale ACL 还需放行 Slave→Master 19400。
+
+### 17.5 投递、会话与降级
+
+- 接收：面板宿主 A2A 服务调用 `injectToSession`；`urgent` 或 `stop` 用 `steer` 立即打断，其余 `queue`。
+- 目标：`scope` 中的 `T-xxx` 优先映射到 poller 的 card→session；无映射时选最近活跃会话。
+- 发送：面板/CLI 先尝试 A2A；网络失败、超时、401/403/503 时写 `notices/`（保留 kind/urgency/scope 与来源说明），返回 `mode:"notice"` 供 UI 显式提示。
+- 幂等与回执：A2A 消息 id 去重；notices 回落沿用现有 delivered/acked 生命周期。
+
+### 17.6 入口
+
+```bash
+node a2a.mjs send modeler --body "请确认假设" --kind query [--urgent] [--scope T-101]
+node a2a.mjs ping coder
+node a2a.mjs status [--json]
+node a2a.mjs peers
+node a2a.mjs config
+```
+
+- 面板：总控「消息」区显示 A2A 运行状态（bind:port、peer 在线数、收发/失败/回落计数、最近错误）；发送表单勾选「优先 A2A」，失败自动回落并提示。
+- 面板 API：`GET /api/a2a/status`、`POST /api/a2a/send`、`POST /api/a2a/refresh`。
+
+### 17.7 打包与运维
+
+- `pack.mjs`：复制 `packages/core/a2a/`、生成/注入团队 token、复制 `enable-a2a.ps1`。
+- `setup.bat`：调用 `enable-a2a.ps1`（Tailscale 网段 19400）并复制 token 到 `%LOCALAPPDATA%\mmcas\a2a-token.txt`。
+- `write-config`：web/desktop profile 的 `mmcas-panel` 均写 `a2aPort`（默认 19400）。
+- `audit-recheck.sh`：校验 A2A 模块、测试、面板适配层、token 与防火墙脚本随包。
+- 默认未配置 token 时 A2A 关闭、notices 照常；不会因 A2A 缺失阻断协作。
+
+### 17.8 当前状态与后续
+
+- 已落地：协议/发现/服务端/客户端/CLI、面板状态与发送、通知回落、桌面端、打包/token/防火墙、44 项测试。
+- 待办（M2/M3）：每角色 token 轮换、重连/心跳/背压/离线队列、实机 tailnet 三端演练、WebTTY、角色技能/审计维度、记忆归档。

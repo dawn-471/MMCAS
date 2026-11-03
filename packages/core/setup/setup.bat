@@ -59,6 +59,10 @@ if exist "%TSBIN%" (
 echo [2/9] 配置 SSH 服务（离线安装，秒级）...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\pkg\core\enable-ssh.ps1"
 if errorlevel 1 (set "WARNED=!WARNED! [2]SSH服务配置失败") else (echo   OK)
+set "A2APORT=19400"
+if defined MMCAS_A2A_PORT set "A2APORT=%MMCAS_A2A_PORT%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\pkg\core\enable-a2a.ps1" -Port !A2APORT!
+if errorlevel 1 (set "WARNED=!WARNED! [2]A2A防火墙配置失败") else (echo   A2A firewall OK)
 
 :: ---------- 3. PortableGit ----------
 echo [3/9] 解压 Git...
@@ -149,6 +153,13 @@ if errorlevel 1 (set "WARNED=!WARNED! [7]codex安装失败（PackyAPI通道不�
 
 :: ---------- 8. 配置生成 ----------
 echo [8/9] 生成配置...
+if not exist "%LOCALAPPDATA%\mmcas" mkdir "%LOCALAPPDATA%\mmcas"
+if exist "pkg\secrets\a2a-token.txt" (
+  copy /y "pkg\secrets\a2a-token.txt" "%LOCALAPPDATA%\mmcas\a2a-token.txt" >nul
+  echo   A2A token OK
+) else (
+  set "WARNED=!WARNED! [8]未预配 A2A token（A2A 关闭，notices 仍可用）"
+)
 :: 独立 DSH_HOME（与队友日常/历史 dsh 物理隔离：会话/工作区/skills/settings 全独立）
 set "MMDSH=%LOCALAPPDATA%\mmcas\dsh-home"
 if exist "pkg\secrets\apikey.txt" (

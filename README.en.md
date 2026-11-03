@@ -21,8 +21,9 @@ MMCAS is a collaboration system for **three-member mathematical modeling competi
 
 Three design principles: **human-in-the-loop** (any milestone can be paused or rewritten), **never silently lose data** (sync conflicts are surfaced for human arbitration), **zero-registration one-click install** (member machines register nothing external).
 
-## Latest (v1.4 feature-complete, pending release)
+## Latest (v1.5 A2A MVP in progress / v1.4 feature-complete)
 
+- **v1.5 A2A direct channel MVP**: realtime agent-to-agent messages over Tailscale (query/reply/task-handoff/stop/ruling), HTTP 19400 + team token + idempotency/TTL/rate limits; automatic `notices/` fallback; `a2a.mjs send/ping/status/peers/config` plus panel status/send; Desktop uses the same panel host and token, with a port separate from 19398.
 - **v1.4 vector memory search**: dependency-free local index (CJK bigrams + Latin/number TF-IDF + cosine) plus optional semantic embeddings (OpenAI-compatible `/embeddings`) and optional sqlite-vec KNN; `memory-search` supports `word|vector|hybrid|semantic`, defaults to hybrid, and falls back automatically.
 - **v1.4 in-panel search**: the Shared Memory drawer gains search, mode/role filters, scores, and fallback hints; `GET /api/memory/search` is consistent across ends; the index cache lives under `MMCAS_HOME` and is never synced via git.
 - **v1.4 operations**: `--stats --stale-days N` stale-entry hints; `download-vendor.sh` fetches sqlite-vec; `pack.mjs` / `audit-recheck.sh` are wired; 87 memory-related regression tests.
@@ -41,6 +42,7 @@ Three design principles: **human-in-the-loop** (any milestone can be paused or r
 - **Shared workspace sync**: a private git repo is the single source of truth — workspace / task cards / memory files sync across all machines (daemon v0.2.1: auto commit/push, periodic pull, pre-commit health checks, conflict guard, stale-lock takeover).
 - **Memory search (v1.4)**: shared memory file stream + local vector index; word / hash-vector / hybrid / semantic modes, optional OpenAI-compatible embeddings and sqlite-vec KNN; role/date/limit/JSON/stats filters, local cache rebuilt on file changes, searchable from the panel.
 - **Embedded dsh panel (CLI web + Desktop)**: Overview (devices / sync waterline / task poller), Task Board, Shared Memory, and Audit Room. Not a standalone service; follows the host theme (light/dark).
+- **A2A direct channel (v1.5 in progress)**: realtime agent messages over Tailscale (query/reply/task-handoff/stop/ruling); HTTP 19400 + team token + idempotency/rate limits, automatic notices fallback; CLI/panel entry points, Desktop-compatible.
 - **Cross-machine control**: Tailscale mesh + SSH ops channel; firewall restricts to the Tailscale CIDR, and the Master cannot be controlled back.
 - **Multi-provider APIs**: official APIs and relays with multi-URL / multi-key switching; a built-in `codex-bridge` connects channels that only accept the standard Codex client.
 - **Environment sync**: lockfile + three-party consent + P2P wheelhouse — the receiver aligns offline (uv diffs and installs only what is missing; no mirror touching).
@@ -111,14 +113,14 @@ On a member machine: unzip the bundle → double-click `setup.bat` (≈9 fully a
 | `specs/task-card.md` | Task-card format & scheduling rules |
 | `ROADMAP.md` | Version plan (mirrored to Milestones / Issues) |
 
-## Roadmap (v1.3.0 released / v1.4 feature-complete)
+## Roadmap (v1.3.0 released / v1.4 feature-complete / v1.5 A2A in progress)
 
+- **v1.5 (in progress)**: A2A MVP (Tailscale HTTP 19400, team token, idempotency/rate limits, notices fallback, CLI/panel, Desktop); next: per-role tokens, reconnect/backpressure, three-end drill, WebTTY, skills/audit
 - **v1.4 (feature-complete, pending release)**: vector memory search (dependency-free index, hybrid/semantic retrieval, embeddings, sqlite-vec, in-panel search, 87-test regression)
 - **v1.3.0 (released)**: full dsh 0.2.1 support (CLI + Desktop), merge-based profile config, standard preset sync
 - **Desktop onboarding**: `MMCAS-Desktop`, isolated `DSH_HOME`, panel `19398`
 - **Config migration**: `reviewer.json`, provider/bridge write active profile patch, legacy `settings.yaml` compatibility
 - **Stability**: cold-session injection, target-session activity, audit report and credentials fixes
-- **v1.5 (planned)**: A2A direct channel as the mainline, in-panel WebTTY and role skills/audit dimensions in parallel, optional memory archive
 
 See [ROADMAP.md](ROADMAP.md), [Milestones](https://github.com/dawn-471/MMCAS/milestones) and the Issues.
 

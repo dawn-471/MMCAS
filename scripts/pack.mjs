@@ -8,7 +8,7 @@
  *   - deploy-keys/mmcas-<role>（git deploy key 私钥）
  *   - apikeys/<role>.txt（可选预配 API key）
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { cpSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -77,6 +77,9 @@ cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-sqlite.mjs'), 
 const vecExt = path.join(ROOT, 'vendor', 'sqlite-vec', 'vec0.dll');
 if (existsSync(vecExt)) cpSync(vecExt, path.join(PKG, 'core', 'memory', 'vec0.dll'));
 else console.warn('提示: 未找到 vendor/sqlite-vec/vec0.dll，包内不含 sqlite-vec 加速（JSON 索引仍可用）');
+mkdirSync(path.join(PKG, 'core', 'a2a'), { recursive: true });
+cpSync(path.join(ROOT, 'packages', 'core', 'a2a'), path.join(PKG, 'core', 'a2a'), { recursive: true });
+cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'enable-a2a.ps1'), path.join(PKG, 'core', 'enable-a2a.ps1'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-sync.bat'), path.join(PKG, 'core', 'start-sync.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-agent.bat'), path.join(PKG, 'core', 'start-agent.bat'));
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'start-desktop.bat'), path.join(PKG, 'core', 'start-desktop.bat'));
@@ -120,6 +123,15 @@ writeFileSync(path.join(BUILD, 'setup.bat'), setup);
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'diagnose.bat'), path.join(BUILD, 'MMCAS-diagnose.bat'));
 
 // 5. 凭证注入（本地读取，绝不落开发仓）
+const a2aTokenFile = path.join(LOCAL, 'a2a-token.txt');
+let a2aToken = existsSync(a2aTokenFile) ? readFileSync(a2aTokenFile, 'utf8').trim() : '';
+if (!a2aToken) {
+  a2aToken = randomBytes(32).toString('base64url');
+  mkdirSync(LOCAL, { recursive: true });
+  writeFileSync(a2aTokenFile, a2aToken + '\n');
+  console.log('[mmcas] 已生成团队 A2A token:', a2aTokenFile);
+}
+writeFileSync(path.join(PKG, 'secrets', 'a2a-token.txt'), a2aToken + '\n');
 if (ROLE !== 'modeler') {
   const keys = JSON.parse(readFileSync(path.join(LOCAL, 'tailscale-authkeys.json'), 'utf8'));
   const k = keys[`mmcas-${ROLE}`];

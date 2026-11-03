@@ -68,10 +68,13 @@ const coreDir = path.join(BASE, 'pkg', 'core');
 const webProfile = path.join(DSH_HOME, 'profiles', 'web');
 const desktopProfile = path.join(DSH_HOME, 'profiles', 'desktop');
 const panelLink = `link:${panelPkg.replace(/\\/g, '/')}`;
+const A2A_PORT_RAW = Number(process.env.MMCAS_A2A_PORT || 19400);
+const A2A_PORT = Number.isInteger(A2A_PORT_RAW) && A2A_PORT_RAW > 0 && A2A_PORT_RAW <= 65535 ? A2A_PORT_RAW : 19400;
 const panelScalars = {
   workspaceDir: workspace.replace(/\\/g, '/'),
   role: ROLE,
   coreDir: coreDir.replace(/\\/g, '/'),
+  a2aPort: A2A_PORT,
 };
 const MMCAS_HOME = process.env.MMCAS_HOME || path.join(os.homedir(), 'AppData', 'Local', 'mmcas');
 const IS_MMCAS_HOME = path.resolve(DSH_HOME).toLowerCase().startsWith(path.resolve(MMCAS_HOME).toLowerCase());
@@ -116,6 +119,7 @@ function panelBlock(workspaceDir, role, port) {
     `    workspaceDir: ${yamlScalar(workspaceDir.replace(/\\/g, '/'))}`,
     `    role: ${yamlScalar(role)}`,
     `    coreDir: ${yamlScalar(coreDir.replace(/\\/g, '/'))}`,
+    `    a2aPort: ${A2A_PORT}`,
   ];
   if (port) lines.push(`    port: ${Number(port)}`);
   return lines.join('\n');
@@ -147,7 +151,7 @@ function provisionDesktop(webPatch, roleText) {
     console.log('[mmcas] 非 MMCAS DSH_HOME，跳过桌面 profile（需要时加 --with-desktop）');
     return;
   }
-  if (desktopRunning()) {
+  if (desktopRunning() && process.env.MMCAS_FORCE_DESKTOP !== '1') {
     console.warn('[mmcas] 桌面端正在运行，跳过桌面 profile 更新（完全退出桌面后重跑 write-config）');
     return;
   }
