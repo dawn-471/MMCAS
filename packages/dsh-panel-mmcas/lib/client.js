@@ -651,7 +651,7 @@ window.__ModuleLoader__.load({
         setBusy(true); setMsg("");
         apiCall("POST", "/api/audit", { dimension: dim, confirm: !!confirm, note: note }).then(function (r) {
           setBusy(false);
-          if (r && r.ok && r.started) { setMsg("审阅已启动：" + r.id + "（约 2–5 分钟，可关闭本抽屉）"); loadStatus(); }
+          if (r && r.ok && r.started) { setMsg("审核已启动：" + r.id + "（约 2–5 分钟，可关闭本抽屉）"); loadStatus(); }
           else if (r && r.needsConfirm) {
             if (window.confirm("预估费用 ≈ ¥" + r.est.estFee + "（" + r.est.files + " 文件 / " + Number(r.est.chars).toLocaleString() + " 字符）——超过阈值。继续？")) start(true);
           } else setMsg((r && r.error) || "启动失败");
@@ -661,7 +661,7 @@ window.__ModuleLoader__.load({
       var res = st && st.result;
       return el(Fragment, null,
         el("div", { className: "mmcas-row" },
-          el("div", { className: "mmcas-sec", style: { flex: 1, marginBottom: 0 } }, "Reviewer（审阅人）· 第四方审阅实例"),
+          el("div", { className: "mmcas-sec", style: { flex: 1, marginBottom: 0 } }, "Reviewer（审核者）· 数学模型 / 代码漏洞审核"),
           el("button", { className: "mmcas-btn-mini", onClick: function () { setShowCfg(!showCfg); } }, showCfg ? "收起配置" : "配置 ▾")
         ),
         el("div", { className: "mmcas-empty" }, cfg && cfg.ok
@@ -678,24 +678,23 @@ window.__ModuleLoader__.load({
           el("div", { className: "mmcas-row" },
             el("button", { className: "mmcas-btn-primary", onClick: saveCfg }, "保存配置"),
             el("button", { className: "mmcas-btn-mini", onClick: function () { setEdit({ endpoint: cfg.endpoint, model: cfg.model, protocol: cfg.protocol, maxFeeCny: cfg.maxFeeCny, apiKeyEnv: cfg.apiKeyEnv, apiKey: "" }); } }, "重置表单")),
-          el("div", { className: "mmcas-empty" }, "写入 MMCAS reviewer.json（key 存 dsh .credentials.yaml）。默认通道为本地桥（3220）；换别家专家模型：改 endpoint + model（+key）即可。旧 settings.yaml 的 reviewer 段会自动只读兼容。")
+          el("div", { className: "mmcas-empty" }, "写入 MMCAS reviewer.json（key 存 dsh .credentials.yaml）。默认通道为本地桥（3220）；换更强专家模型：改 endpoint + model（+key）即可。审核范围仅数学模型 / 代码；旧 settings.yaml 的 reviewer 段会自动只读兼容。")
         ) : null,
-        el("div", { className: "mmcas-sec" }, "发起审阅"),
+        el("div", { className: "mmcas-sec" }, "发起审核（只审数学建模内容）"),
         el("div", { className: "mmcas-row" },
           el("select", { className: "mmcas-select", style: { width: "150px", flex: "none" }, value: dim, onChange: function (e) { setDim(e.target.value); } },
             el("option", { value: "model" }, "数学模型"),
-            el("option", { value: "code" }, "代码成品"),
-            el("option", { value: "paper" }, "最终论文")),
-          el("button", { className: "mmcas-btn-primary", disabled: busy || running, onClick: function () { start(false); } }, running ? "审阅中…" : "开始审阅")
+            el("option", { value: "code" }, "代码成品")),
+          el("button", { className: "mmcas-btn-primary", disabled: busy || running, onClick: function () { start(false); } }, running ? "审核中…" : "开始审核")
         ),
         el("div", { className: "mmcas-row" },
-          el("textarea", { className: "mmcas-input", style: { minHeight: "44px" }, placeholder: "补充说明（可选，随材料一起提交：本轮审阅重点 / 跨文件提醒）", value: note, onChange: function (ev) { setNote(ev.target.value); } })
+          el("textarea", { className: "mmcas-input", style: { minHeight: "44px" }, placeholder: "补充说明（可选：本轮审核重点 / 跨文件提醒）", value: note, onChange: function (ev) { setNote(ev.target.value); } })
         ),
         msg ? el("div", { className: "mmcas-empty" }, msg) : null,
         running ? el("div", { className: "mmcas-sync" }, "运行中：" + st.dimension + " · 启动于 " + st.startedAt) : null,
         res ? el("div", { className: "mmcas-mem" },
           res.ok
-            ? ("✓ " + res.dimension + " 审阅完成 · " + res.elapsedS + "s · ≈¥" + res.estFee + (res.usage ? (" · in=" + (res.usage.input_tokens || "?") + " out=" + (res.usage.output_tokens || "?")) : ""))
+            ? ("✓ " + res.dimension + " 审核完成 · " + res.elapsedS + "s · ≈¥" + res.estFee + (res.usage ? (" · in=" + (res.usage.input_tokens || "?") + " out=" + (res.usage.output_tokens || "?")) : ""))
             : ("✗ " + (res.error || "失败")),
           res.ok && res.reportPath ? el("div", { className: "r" }, String(res.reportPath)) : null,
           res.ok && res.notice ? el("div", { className: "r" }, "通知已发送: " + res.notice) : null
@@ -707,7 +706,175 @@ window.__ModuleLoader__.load({
                 ? (" · ⚠ 最近上游错误 " + (bh.bridge.lastUpstreamError.status || "?") + "（" + String(bh.bridge.lastUpstreamError.at || "").slice(0, 19) + "）")
                 : (bh.bridge.lastSuccessAt ? (" · 最近成功 " + String(bh.bridge.lastSuccessAt).slice(0, 19)) : " · 尚无调用记录")))
             : ("桥：✗ " + (bh.error || "不可达") + "（默认通道将失败；检查 3220 或改配置走外部端点）")) : null,
-        el("div", { className: "mmcas-empty" }, "报告落盘于工作区 audit/ 目录。")
+        el("div", { className: "mmcas-empty" }, "报告落盘于工作区 audit/ 目录。审核仅覆盖模型与代码漏洞，不评写作/排版。")
+      );
+    }
+
+    // ---------- 视图: 指导者 ----------
+    function GuideRoom() {
+      var _d = useState("direction"), dim = _d[0], setDim = _d[1];
+      var _s = useState(null), st = _s[0], setSt = _s[1];
+      var _h = useState(null), bh = _h[0], setBh = _h[1];
+      var _cf = useState(null), cfg = _cf[0], setCfg = _cf[1];
+      var _sc = useState(false), showCfg = _sc[0], setShowCfg = _sc[1];
+      var _ed = useState(null), edit = _ed[0], setEdit = _ed[1];
+      var _b = useState(false), busy = _b[0], setBusy = _b[1];
+      var _m = useState(""), msg = _m[0], setMsg = _m[1];
+      var _nt = useState(""), note = _nt[0], setNote = _nt[1];
+      function loadStatus() {
+        fetch(API + "/api/guide/status").then(function (r) { return r.json(); }).then(function (s) { setSt(s); }).catch(function () {});
+        fetch(API + "/api/bridge/health").then(function (r) { return r.json(); }).then(function (b) { setBh(b); }).catch(function () {});
+        fetch(API + "/api/guide/config").then(function (r) { return r.json(); }).then(function (c) { setCfg(c); }).catch(function () {});
+      }
+      useEffect(function () { loadStatus(); var t = setInterval(loadStatus, 5000); return function () { clearInterval(t); }; }, []);
+      useEffect(function () {
+        if (cfg && cfg.ok && !edit) setEdit({ endpoint: cfg.endpoint, model: cfg.model, protocol: cfg.protocol, maxFeeCny: cfg.maxFeeCny, apiKeyEnv: cfg.apiKeyEnv, apiKey: "" });
+      }, [cfg]);
+      function saveCfg() {
+        var e = edit || {};
+        apiCall("PUT", "/api/guide/config", { endpoint: e.endpoint, model: e.model, protocol: e.protocol, maxFeeCny: e.maxFeeCny, apiKey: e.apiKey || undefined, apiKeyEnv: e.apiKeyEnv }).then(function (r) {
+          if (r && r.ok) { setMsg("Guide 配置已保存（填写了 key 则已写入 credentials）"); setEdit(null); setShowCfg(false); loadStatus(); }
+          else setMsg((r && r.error) || "配置保存失败");
+        }).catch(function (x) { setMsg(String(x)); });
+      }
+      function start(confirm) {
+        setBusy(true); setMsg("");
+        apiCall("POST", "/api/guide", { dimension: dim, confirm: !!confirm, note: note }).then(function (r) {
+          setBusy(false);
+          if (r && r.ok && r.started) { setMsg("指导已启动：" + r.id + "（约 2–5 分钟，可关闭本抽屉）"); loadStatus(); }
+          else if (r && r.needsConfirm) {
+            if (window.confirm("预估费用 ≈ ¥" + r.est.estFee + "（" + r.est.files + " 文件 / " + Number(r.est.chars).toLocaleString() + " 字符）——超过阈值。继续？")) start(true);
+          } else setMsg((r && r.error) || "启动失败");
+        }).catch(function (e) { setBusy(false); setMsg(String(e)); });
+      }
+      var running = st && st.running;
+      var res = st && st.result;
+      return el(Fragment, null,
+        el("div", { className: "mmcas-row" },
+          el("div", { className: "mmcas-sec", style: { flex: 1, marginBottom: 0 } }, "Guide（指导者）· 方向 / 模型 / 实现路线"),
+          el("button", { className: "mmcas-btn-mini", onClick: function () { setShowCfg(!showCfg); } }, showCfg ? "收起配置" : "配置 ▾")
+        ),
+        el("div", { className: "mmcas-empty" }, cfg && cfg.ok
+          ? ("通道：" + cfg.model + " @ " + cfg.endpoint + "（" + cfg.protocol + "）· key " + (cfg.hasKey ? "已配置" : "未配置") + " · 阈值 ¥" + cfg.maxFeeCny + " · 源:" + cfg.source)
+          : (cfg ? ("配置读取失败：" + (cfg.error || "未知")) : "配置读取中…")),
+        showCfg && edit ? el("div", { className: "mmcas-mem" },
+          el("div", { className: "mmcas-row" }, el("span", { className: "mmcas-label" }, "Endpoint"), el("input", { className: "mmcas-input", value: edit.endpoint || "", onChange: function (ev) { setEdit(Object.assign({}, edit, { endpoint: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" }, el("span", { className: "mmcas-label" }, "模型名"), el("input", { className: "mmcas-input", value: edit.model || "", onChange: function (ev) { setEdit(Object.assign({}, edit, { model: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" },
+            el("span", { className: "mmcas-label" }, "协议"), el("select", { className: "mmcas-select", style: { width: "130px", flex: "none" }, value: edit.protocol || "responses", onChange: function (ev) { setEdit(Object.assign({}, edit, { protocol: ev.target.value })); } },
+              el("option", { value: "responses" }, "responses"), el("option", { value: "chat" }, "chat/completions")),
+            el("span", { className: "mmcas-label" }, "阈值¥"), el("input", { className: "mmcas-input", style: { width: "70px", flex: "none" }, value: edit.maxFeeCny || 50, onChange: function (ev) { setEdit(Object.assign({}, edit, { maxFeeCny: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" }, el("span", { className: "mmcas-label" }, "API Key"), el("input", { className: "mmcas-input", type: "password", placeholder: "填写后写入 credentials（不回显）", value: edit.apiKey || "", onChange: function (ev) { setEdit(Object.assign({}, edit, { apiKey: ev.target.value })); } })),
+          el("div", { className: "mmcas-row" },
+            el("button", { className: "mmcas-btn-primary", onClick: saveCfg }, "保存配置"),
+            el("button", { className: "mmcas-btn-mini", onClick: function () { setEdit({ endpoint: cfg.endpoint, model: cfg.model, protocol: cfg.protocol, maxFeeCny: cfg.maxFeeCny, apiKeyEnv: cfg.apiKeyEnv, apiKey: "" }); } }, "重置表单")),
+          el("div", { className: "mmcas-empty" }, "写入 MMCAS guide.json（key 存 dsh .credentials.yaml）。建议使用比执行手更强的专家模型；默认本地桥 3220。Guide 只出方向/路线，不写代码/论文。")
+        ) : null,
+        el("div", { className: "mmcas-sec" }, "发起指导（仅 Master）"),
+        el("div", { className: "mmcas-row" },
+          el("select", { className: "mmcas-select", style: { width: "170px", flex: "none" }, value: dim, onChange: function (e) { setDim(e.target.value); } },
+            el("option", { value: "direction" }, "方向 / 关键路径"),
+            el("option", { value: "model" }, "更强数学模型"),
+            el("option", { value: "code" }, "算法 / 实现路线")),
+          el("button", { className: "mmcas-btn-primary", disabled: busy || running, onClick: function () { start(false); } }, running ? "指导中…" : "开始指导")
+        ),
+        el("div", { className: "mmcas-row" },
+          el("textarea", { className: "mmcas-input", style: { minHeight: "44px" }, placeholder: "补充说明（可选：当前卡点 / 希望重点判断的方向 / 剩余时间）", value: note, onChange: function (ev) { setNote(ev.target.value); } })
+        ),
+        msg ? el("div", { className: "mmcas-empty" }, msg) : null,
+        running ? el("div", { className: "mmcas-sync" }, "运行中：" + st.dimension + " · 启动于 " + st.startedAt) : null,
+        res ? el("div", { className: "mmcas-mem" },
+          res.ok
+            ? ("✓ " + res.dimension + " 指导完成 · " + res.elapsedS + "s · ≈¥" + res.estFee + (res.usage ? (" · in=" + (res.usage.input_tokens || "?") + " out=" + (res.usage.output_tokens || "?")) : ""))
+            : ("✗ " + (res.error || "失败")),
+          res.ok && res.reportPath ? el("div", { className: "r" }, String(res.reportPath)) : null,
+          res.ok && res.notice ? el("div", { className: "r" }, "通知已发送: " + res.notice) : null
+        ) : null,
+        bh ? el("div", { className: "mmcas-empty" + ((bh.ok && bh.bridge && !bh.bridge.lastUpstreamError) ? "" : " warn") },
+          bh.ok
+            ? ("桥：在线 · " + ((bh.bridge.models || []).join("/")) +
+              (bh.bridge.lastUpstreamError
+                ? (" · ⚠ 最近上游错误 " + (bh.bridge.lastUpstreamError.status || "?") + "（" + String(bh.bridge.lastUpstreamError.at || "").slice(0, 19) + "）")
+                : (bh.bridge.lastSuccessAt ? (" · 最近成功 " + String(bh.bridge.lastSuccessAt).slice(0, 19)) : " · 尚无调用记录")))
+            : ("桥：✗ " + (bh.error || "不可达") + "（默认通道将失败；检查 3220 或改配置走外部端点）")) : null,
+        el("div", { className: "mmcas-empty" }, "报告落盘于工作区 guidance/ 目录。Guide 只给方向与路线；执行仍由三名执行手完成。")
+      );
+    }
+
+    // ---------- 视图: 半交互终端（Master） ----------
+    function TerminalRoom() {
+      var _o = useState(""), out = _o[0], setOut = _o[1];
+      var _s = useState(0), seq = _s[0], setSeq = _s[1];
+      var _r = useState(false), running = _r[0], setRunning = _r[1];
+      var _sh = useState(""), shell = _sh[0], setShell = _sh[1];
+      var _cw = useState(""), cwd = _cw[0], setCwd = _cw[1];
+      var _c = useState(""), cmd = _c[0], setCmd = _c[1];
+      var _e = useState(""), err = _e[0], setErr = _e[1];
+      function append(text) {
+        if (!text) return;
+        setOut(function (prev) {
+          var next = prev + text;
+          return next.length > 200000 ? next.slice(-200000) : next;
+        });
+      }
+      function poll() {
+        fetch(API + "/api/terminal/poll?since=" + seq).then(function (r) { return r.json(); }).then(function (s) {
+          if (!s || !s.ok) { setErr((s && s.error) || "终端状态读取失败"); return; }
+          if (s.chunks && s.chunks.length) {
+            append(s.chunks.map(function (c) { return c.text; }).join(""));
+            setSeq(s.seq);
+          }
+          setRunning(!!s.running);
+          setShell(s.shell || "");
+          setCwd(s.cwd || "");
+          if (s.error) setErr(s.error);
+        }).catch(function (e) { setErr(String(e)); });
+      }
+      useEffect(function () { var t = setInterval(poll, 500); return function () { clearInterval(t); }; }, [seq]);
+      useEffect(function () { openTerm(); }, []);
+      function openTerm() {
+        setErr("");
+        apiCall("POST", "/api/terminal/open", {}).then(function (s) {
+          if (s && s.ok) {
+            setOut("");
+            setSeq(0);
+            setRunning(!!s.running);
+            setShell(s.shell || "");
+            setCwd(s.cwd || "");
+            if (s.chunks && s.chunks.length) { append(s.chunks.map(function (c) { return c.text; }).join("")); setSeq(s.seq); }
+          } else setErr((s && s.error) || "打开失败");
+        }).catch(function (e) { setErr(String(e)); });
+      }
+      function send() {
+        var text = cmd;
+        if (!text.trim()) return;
+        apiCall("POST", "/api/terminal/input", { data: text + "\n" }).then(function (r) {
+          if (r && r.ok) { append("\n> " + text + "\n"); setCmd(""); }
+          else setErr((r && r.error) || "输入失败");
+        }).catch(function (e) { setErr(String(e)); });
+      }
+      function closeTerm() {
+        apiCall("POST", "/api/terminal/close", {}).then(function () { setRunning(false); });
+      }
+      return el(Fragment, null,
+        el("div", { className: "mmcas-sec" }, "半交互终端（Master）· WebTTY MVP"),
+        el("div", { className: "mmcas-empty" + (err ? " warn" : "") },
+          (running ? "运行中" : "未运行") + " · " + (shell || "shell") + " · cwd " + (cwd || "—") +
+          " · 命令审计写入本地 terminal-audit.log；PTY/TAB/Ctrl+C 待接入"),
+        err ? el("div", { className: "mmcas-empty warn" }, "终端错误：" + err) : null,
+        el("pre", { className: "mmcas-console", style: { height: "48vh", maxHeight: "48vh", whiteSpace: "pre-wrap" } }, out || "（打开终端后输出显示在此）"),
+        el("div", { className: "mmcas-row", style: { marginTop: "8px" } },
+          el("input", {
+            className: "mmcas-input", placeholder: "输入命令，回车发送（不要输入密钥）", value: cmd,
+            onChange: function (e) { setCmd(e.target.value); },
+            onKeyDown: function (e) { if (e.key === "Enter") send(); }
+          }),
+          el("button", { className: "mmcas-btn-primary", disabled: !running, onClick: send }, "发送"),
+          el("button", { className: "mmcas-btn-ghost", onClick: function () { setOut(""); } }, "清屏"),
+          el("button", { className: "mmcas-btn-ghost", onClick: openTerm }, running ? "重开" : "打开"),
+          el("button", { className: "mmcas-btn-danger", disabled: !running, onClick: closeTerm }, "关闭")
+        ),
+        el("div", { className: "mmcas-empty" }, "安全边界：仅 Master 可用；命令与时间写入本机审计日志；Slave 不开放入站终端。")
       );
     }
 
@@ -796,10 +963,12 @@ window.__ModuleLoader__.load({
 
     // ---------- 抽屉壳 ----------
     function Drawer(props) {
-      var title = props.panel === "overview" ? "总控" : props.panel === "board" ? "任务看板" : props.panel === "audit" ? "审阅室" : "共享记忆";
+      var title = props.panel === "overview" ? "总控" : props.panel === "board" ? "任务看板" : props.panel === "audit" ? "审核室" : props.panel === "guide" ? "指导室" : props.panel === "terminal" ? "终端" : "共享记忆";
       var body = props.panel === "overview" ? el(Overview)
         : props.panel === "board" ? el(Board)
         : props.panel === "audit" ? el(AuditRoom)
+        : props.panel === "guide" ? el(GuideRoom)
+        : props.panel === "terminal" ? el(TerminalRoom)
         : el(Memory);
       return el(Fragment, null,
         el("div", { className: "mmcas-mask", onClick: props.onClose }),
@@ -840,6 +1009,12 @@ window.__ModuleLoader__.load({
       if (kind === "audit") return el(Fragment, null,
         el("path", { d: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" }),
         el("path", { d: "M9 12l2 2 4-4" }));
+      if (kind === "guide") return el(Fragment, null,
+        el("path", { d: "M12 3a6 6 0 0 0-3 11v3h6v-3a6 6 0 0 0-3-11z" }),
+        el("path", { d: "M10 20h4M10 17h4" }));
+      if (kind === "terminal") return el(Fragment, null,
+        el("rect", { x: "3", y: "4", width: "18", height: "16", rx: "2" }),
+        el("path", { d: "M7 9l3 3-3 3M13 15h4" }));
       return el(Fragment, null,
         el("rect", { x: "4", y: "5", width: "16", height: "10", rx: "2" }),
         el("path", { d: "M8 19h8M12 15v4" }));
@@ -891,8 +1066,9 @@ window.__ModuleLoader__.load({
         });
       };
 
-      // 角色感知：全员四按钮（总控/看板/记忆/审阅室）；总控抽屉内按角色分级（操控门户仅 Master）
-      var buttons = [btn("overview", "总控"), btn("board", "任务看板"), btn("memory", "共享记忆"), btn("audit", "审阅室")];
+      // 角色感知：全员四按钮（总控/看板/记忆/审核室）；指导室仅 Master（控制专家模型成本）
+      var buttons = [btn("overview", "总控"), btn("board", "任务看板"), btn("memory", "共享记忆"), btn("audit", "审核室")];
+      if (role === "modeler") buttons.push(btn("guide", "指导室"), btn("terminal", "终端"));
 
       return el(Fragment, null,
         el("div", { className: "mmcas-wrap", "data-mmcas-btns": "1" }, buttons),

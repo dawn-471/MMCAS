@@ -172,7 +172,7 @@ console.log('\n[T10/T11] 双协议 mock 全链（chat + responses）');
   check('T10 chat 全链 ok + 报告含 mock 文本', r10.code === 0 && r10.res && r10.res.ok && r10.res.protocol === 'chat', JSON.stringify(r10.res).slice(0, 200));
   if (r10.res && r10.res.reportPath) {
     const txt = readFileSync(r10.res.reportPath, 'utf8');
-    check('T10 报告落盘含正文 + meta', txt.includes('OK-via-chat') && txt.includes('Reviewer 审阅报告') && existsSync(r10.res.reportPath.replace(/\.md$/, '.meta.json')), 'report ok');
+    check('T10 报告落盘含正文 + meta', txt.includes('OK-via-chat') && txt.includes('Reviewer 审核报告') && existsSync(r10.res.reportPath.replace(/\.md$/, '.meta.json')), 'report ok');
   } else check('T10 报告落盘含正文 + meta', false, 'no reportPath');
   check('T11 responses 全链 ok（默认协议回归）', r11.code === 0 && r11.res && r11.res.ok && r11.res.protocol === 'responses', JSON.stringify(r11.res).slice(0, 200));
 }

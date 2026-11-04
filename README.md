@@ -21,8 +21,9 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 
 三条设计原则：**人类在环**（关键节点可随时卡停/改写）、**永不静默丢数据**（同步冲突显式上报，人类裁决）、**零注册一键安装**（成员机不注册任何外部账号）。
 
-## 最新更新（v1.5 A2A MVP 进行中 / v1.4 功能完成）
+## 最新更新（v1.6 专家双角色进行中 / v1.5 A2A MVP / v1.4 功能完成）
 
+- **v1.6 专家双角色**：**Guide（指导者）**仅 Master 发起，用更强专家模型判断方向、关键路径与攻坚路线（direction / model / code）；**Reviewer（审核者）**只审数学模型与代码漏洞（model / code，A/B/C 分级 + 证据）。共享运行器、独立 `guide.json` / `reviewer.json`、审核室 / 指导室、预算守门；参考 `dsh-superagent-prototype` 的“只在被请求时运行、报告即交付”。
 - **v1.5 A2A 直连 MVP**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决），HTTP 19400 + 团队 token + 幂等/TTL/限流；离线或失败自动回落 `notices/`；`a2a.mjs send/ping/status/peers/config` + 面板总控状态/发送；桌面端沿用同一面板宿主与 token，端口与 19398 分离。
 - **v1.4 记忆向量检索**：零依赖本地索引（中文 bigram + 英文/数字词元 TF-IDF + 余弦）＋可选语义嵌入（OpenAI 兼容 `/embeddings`）＋可选 sqlite-vec KNN；`memory-search` 支持 `word|vector|hybrid|semantic`，默认混合，语义失败自动回退。
 - **v1.4 面板搜索**：共享记忆抽屉新增搜索框、模式/角色筛选、分数与降级提示；`GET /api/memory/search` 三端一致，索引缓存于 `MMCAS_HOME`、不随 git 同步。
@@ -41,15 +42,17 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 - **任务卡 DAG 调度**：三状态（todo/doing/done）+ 依赖门控（deps 全 done 才可开始）+ 优先级 + 原子认领；CLI 与面板双通道同护栏；任务轮询器支持 Agent 自动接取就绪任务。
 - **共享工作区同步**：git 私有仓为唯一事实源——工作区 / 任务卡 / 记忆文件三端自动同步（守护进程 v0.2.1：自动 commit/push、定时 pull、入库前体检、冲突守卫、过期锁接管）。
 - **记忆检索（v1.4）**：共享记忆文件流 + 本地向量索引；支持词匹配 / 哈希向量 / 混合 / 语义四种模式，可选 OpenAI 兼容 embeddings 与 sqlite-vec KNN；角色/日期/limit/JSON/stats，索引本机缓存并按文件变更自动重建，面板可直接搜索。
-- **dsh 内嵌面板（CLI web + 桌面端）**：总控（成员设备 / 同步水位 / 任务轮询器）、任务看板、共享记忆、审计室；不是独立服务，随 dsh 侧栏运行，自动跟随宿主明暗主题。
+- **dsh 内嵌面板（CLI web + 桌面端）**：总控（成员设备 / 同步水位 / 任务轮询器）、任务看板、共享记忆、审核室、指导室；不是独立服务，随 dsh 侧栏运行，自动跟随宿主明暗主题。
+- **专家双角色（v1.6）**：Guide 往前指方向、定关键路径、给 2–3 条攻坚路线；Reviewer 往回查模型/代码漏洞（A/B/C + 证据）。两者都不接任务卡、不执行，报告落 `guidance/` / `audit/` 并通知 Master。
 - **A2A 直连（v1.5 开发中）**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决）；HTTP 19400 + 团队 token + 幂等/限流，失败自动回落 notices；面板/CLI 双入口，桌面端同宿主。
+- **半交互 WebTTY（v1.5 MVP）**：Master 面板终端可开持久 shell、执行命令并轮询输出；命令审计落本地；Slave 不开放；完整 PTY（TAB/Ctrl+C）待后续。
 - **跨设备控制**：Tailscale 组网 + SSH 运维通道；防火墙只放行 Tailscale 网段，Master 不可被反向控制。
 - **多 API 来源**：官方 API 与中转站多 URL / 多 key，一键切换；内置 `codex-bridge` 让“仅接受标准 Codex 客户端”的通道也能接入。
 - **环境同步**：lockfile + 三方同意 + P2P wheelhouse——接收端离线对齐，uv 自动 diff 只装缺失（不碰镜像源）。
 - **能力层 skills**：每角色专属技能集（dsh 原生 skills 机制，按需加载）；蒸馏整合自社区 MIT 建模 skill 生态（见 `docs/capability-design.md`）。
 - **会话与上下文（v1.2）**：任务自动接取即开新会话（一卡一会话、打回回原会话续做）；上下文压缩三件套（自动压缩 / `/compact` / 溢出恢复）+ token 水位守门。
 - **跨端通道（v1.2）**：notices 消息层（工作区 git 通道，紧急消息 steer 打断）+ 停止指令 + 回程卡（Slave→Modeler 受限建卡）+ 打回机制（done→todo 必填原因）。
-- **独立审计（v1.2）**：面板「审计室」一键对数学模型 / 代码成品 / 最终论文发起第三方专家审计（经本地 codex-bridge），含预算守门（> ¥30 需确认）与桥健康可见。
+- **专家双角色（v1.6）**：面板「审核室」对数学模型 / 代码发起独立审核（A/B/C + 证据，预算守门、桥健康可见）；「指导室」仅 Master，用更强专家模型给方向与攻坚路线。
 - **同步守护看门狗（v1.2）**：同步心跳显性化（面板心跳行 + 停滞告警）；启动器自动确保守护进程在跑。
 - **零注册一键安装**：每成员一个 zip 包，解压双击 `setup.bat` 全自动（Tailscale 上线 → SSH → 便携 Git/Node/uv → 克隆工作区 → 安装 dsh → 生成配置 → 自启 + 快捷方式）。
 
@@ -79,8 +82,10 @@ flowchart LR
 docs/               设计文档与凭证暴露面登记（模板）
 specs/              任务卡规范
 packages/
-  core/             共享核心：同步守护、profile 合并、provider 切换、任务卡护栏、记忆、SSH 工具、setup
+  core/             共享核心：同步守护、profile 合并、provider 切换、任务卡护栏、记忆、A2A、专家运行器、SSH 工具、setup
   dsh-panel-mmcas/  dsh 内嵌面板插件（CLI web + 桌面端）
+  guide/            指导者包（role.md + 提示词 + 配置模板）
+  reviewer/         审核者包（role.md + 模型/代码审核提示词 + 配置模板）
   modeler/          建模手包（role.md + skills/）
   coder/            编程手包（role.md + skills/）
   writer/           论文手包（role.md + skills/）
@@ -113,9 +118,10 @@ bash scripts/download-vendor.sh
 | `specs/task-card.md` | 任务卡格式与调度规则 |
 | `ROADMAP.md` | 版本规划（与 Milestones / Issues 同步） |
 
-## Roadmap（v1.3.0 已发布 / v1.4 功能完成 / v1.5 A2A 进行中）
+## Roadmap（v1.3.0 已发布 / v1.4 功能完成 / v1.5 A2A / v1.6 专家双角色 进行中）
 
-- **v1.5（进行中）**：A2A 直连 MVP（Tailscale HTTP 19400、团队 token、幂等/限流、notices 回落、面板/CLI、桌面端）；后续每角色 token、重连/背压、三端演练、WebTTY、技能/审计
+- **v1.6（进行中）**：Guide / Reviewer 专家双角色（独立配置、审核室/指导室、预算守门、B-Audit 提示词迁入）；后续工作项持久化、Guide→任务卡联动、实机费用标定
+- **v1.5（进行中）**：A2A 直连 MVP + 半交互 WebTTY + 记忆归档；后续每角色 token、重连/背压、完整 PTY、三端演练、技能/审计
 - **v1.4（功能完成，待发布）**：向量化记忆检索（零依赖索引、混合/语义检索、语义嵌入、sqlite-vec、面板搜索、87 项回归）
 - **v1.3.0（已发布）**：dsh 0.2.1 全兼容（CLI + 桌面端）、profile 合并、standard preset 同步
 - **桌面端接入**：`MMCAS-Desktop`、独立 `DSH_HOME`、面板 `19398`

@@ -27,7 +27,7 @@
  *   config.localDir 可配（测试/演示隔离）。
  */
 import { createServer } from 'node:http';
-import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, statSync, mkdirSync, rmSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, appendFileSync, unlinkSync, existsSync, statSync, mkdirSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -57,6 +57,9 @@ export function apply(ctx, config = {}) {
   let a2aModules = null;
   let a2aServer = null;
   let a2aTimer = null;
+  const terminal = {
+    proc: null, seq: 0, chunks: [], running: false, startedAt: null, shell: '', cwd: ws, lastError: null,
+  };
 
   // ---------- git 同步（看板刷新的数据来源：coder/writer 端的卡变更经远端仓进来） ----------
   const syncCfg = {
@@ -909,6 +912,97 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  function terminalSpec() {
+    const cfg = config.terminal && typeof config.terminal === 'object' ? config.terminal : {};
+    if (cfg.shell) return { shell: String(cfg.shell), args: Array.isArray(cfg.args) ? cfg.args.map(String) : [] };
+    if (process.platform === 'win32') return { shell: process.env.ComSpec || 'cmd.exe', args: ['/Q', '/K', 'chcp 65001>nul'] };
+    return { shell: process.env.SHELL || '/bin/bash', args: ['-i'] };
+  }
+
+  function terminalPush(text) {
+    if (!text) return;
+    terminal.seq++;
+    terminal.chunks.push({ seq: terminal.seq, at: new Date().toISOString(), text: String(text) });
+    if (terminal.chunks.length > 800) terminal.chunks.splice(0, terminal.chunks.length - 800);
+  }
+
+  function terminalSnapshot(since = 0) {
+    const firstSeq = terminal.chunks.length ? terminal.chunks[0].seq : 0;
+    return {
+      ok: true,
+      running: terminal.running,
+      pid: terminal.proc ? terminal.proc.pid : null,
+      shell: terminal.shell,
+      cwd: terminal.cwd,
+      startedAt: terminal.startedAt,
+      seq: terminal.seq,
+      truncated: !!since && since + 1 < firstSeq,
+      chunks: terminal.chunks.filter((chunk) => chunk.seq > since),
+      error: terminal.lastError,
+    };
+  }
+
+  function terminalOpen() {
+    if (terminal.proc && terminal.running) return { ok: true, already: true, ...terminalSnapshot(terminal.seq) };
+    const spec = terminalSpec();
+    terminal.chunks = [];
+    terminal.seq = 0;
+    terminal.lastError = null;
+    terminal.shell = spec.shell;
+    terminal.cwd = ws || process.cwd();
+    terminal.startedAt = new Date().toISOString();
+    try {
+      const proc = spawn(spec.shell, spec.args, {
+        cwd: terminal.cwd,
+        env: { ...process.env, TERM: 'xterm-256color' },
+        windowsHide: true,
+      });
+      terminal.proc = proc;
+      terminal.running = true;
+      proc.stdout.setEncoding('utf8');
+      proc.stderr.setEncoding('utf8');
+      proc.stdout.on('data', (chunk) => terminalPush(chunk));
+      proc.stderr.on('data', (chunk) => terminalPush(chunk));
+      proc.on('error', (err) => { terminal.lastError = String((err && err.message) || err); terminalPush('\n[shell error] ' + terminal.lastError + '\n'); });
+      proc.on('exit', (code, signal) => {
+        terminal.running = false;
+        terminalPush('\n[process exited: ' + (code === null ? signal : code) + ']\n');
+        terminal.proc = null;
+      });
+      return { ok: true, already: false, ...terminalSnapshot(0) };
+    } catch (err) {
+      terminal.lastError = String((err && err.message) || err);
+      terminal.running = false;
+      return { ok: false, error: terminal.lastError };
+    }
+  }
+
+  function terminalInput(data) {
+    const text = String(data || '');
+    if (!text) return { ok: false, error: 'data 必填' };
+    if (text.length > 4096) return { ok: false, error: '单次输入超过 4096 字符' };
+    if (!terminal.proc || !terminal.running) return { ok: false, error: '终端未打开' };
+    try {
+      terminal.proc.stdin.write(text.endsWith('\n') ? text : text + '\n', 'utf8');
+      try {
+        mkdirSync(local, { recursive: true });
+        appendFileSync(path.join(local, 'terminal-audit.log'), new Date().toISOString() + ' ' + role + ' ' + JSON.stringify(text.slice(0, 1000)) + '\n');
+      } catch {}
+      return { ok: true, seq: terminal.seq };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  }
+
+  function terminalClose() {
+    if (!terminal.proc) return { ok: true, running: false };
+    try { terminal.proc.kill(); } catch {}
+    terminal.running = false;
+    terminal.proc = null;
+    terminalPush('\n[terminal closed]\n');
+    return { ok: true, running: false, seq: terminal.seq };
+  }
+
   // ---------- v1.2：独立审计（W4：经本地桥的第三方专家审计） ----------
   function findAuditRunner() {
     try {
@@ -927,26 +1021,33 @@ export function apply(ctx, config = {}) {
     return null;
   }
   const auditState = { running: false, id: '', dimension: '', startedAt: '', result: null };
+  const guideState = { running: false, id: '', dimension: '', startedAt: '', result: null };
   // ---- v1.2.x：Reviewer 配置（MMCAS 自有 reviewer.json；dsh 0.2.x 的 settings.yaml 只做只读迁移） ----
   let reviewerCfgCache = { at: 0, data: null };
+  let guideCfgCache = { at: 0, data: null };
   function reviewerJsonPath() { return path.join(local, 'reviewer.json'); }
+  function guideJsonPath() { return path.join(local, 'guide.json'); }
   function auditDshHome() {
     const mmcasHome = process.env.MMCAS_HOME || path.join(os.homedir(), 'AppData', 'Local', 'mmcas');
     return process.env.DSH_HOME || path.join(mmcasHome, 'dsh-home');
   }
-  function readReviewerJson() {
+  function readJsonFile(file) {
     try {
-      const j = JSON.parse(readFileSync(reviewerJsonPath(), 'utf8'));
+      const j = JSON.parse(readFileSync(file, 'utf8'));
       return j && typeof j === 'object' && !Array.isArray(j) ? j : null;
     } catch { return null; }
   }
-  function writeReviewerJson(cfg) {
+  function readReviewerJson() { return readJsonFile(reviewerJsonPath()); }
+  function readGuideJson() { return readJsonFile(guideJsonPath()); }
+  function writeExpertJson(file, cfg) {
     try {
       mkdirSync(local, { recursive: true });
-      writeFileSync(reviewerJsonPath(), JSON.stringify({ version: 1, ...cfg }, null, 2) + '\n');
+      writeFileSync(file, JSON.stringify({ version: 1, ...cfg }, null, 2) + '\n');
       return true;
     } catch { return false; }
   }
+  function writeReviewerJson(cfg) { return writeExpertJson(reviewerJsonPath(), cfg); }
+  function writeGuideJson(cfg) { return writeExpertJson(guideJsonPath(), cfg); }
   // 旧安装兼容：settings.yaml / settings.yaml.imported 里的 reviewer 段只读。
   function reviewerSection(settingsPath) {
     try {
@@ -1011,12 +1112,14 @@ export function apply(ctx, config = {}) {
     if (!inserted) out.push('refs:', `  ${envName}: ${value}`);
     return out.join('\n').replace(/\n*$/, '\n');
   }
-  function runAuditCli(dimension, opts) {
+  function runExpertCli(mode, dimension, opts) {
     return new Promise((resolve) => {
       const runner = findAuditRunner();
       if (!runner) { resolve({ ok: false, error: '未找到 audit-run.mjs（在 profile patch 的 mmcas-panel.config 配 coreDir，或使用含 packages/core 的布局）' }); return; }
-      const args = [runner, '--dimension', dimension, '--workspace', ws,
-        '--dsh-home', auditDshHome(), '--reviewer-config', reviewerJsonPath()];
+      const cfgFlag = mode === 'guide' ? '--guide-config' : '--reviewer-config';
+      const cfgPath = mode === 'guide' ? guideJsonPath() : reviewerJsonPath();
+      const args = [runner, '--mode', mode, '--dimension', dimension, '--workspace', ws,
+        '--dsh-home', auditDshHome(), cfgFlag, cfgPath];
       if (opts && opts.dryRun) args.push('--dry-run');
       if (opts && opts.confirm) args.push('--confirm');
       if (opts && opts.model) args.push('--model', String(opts.model));
@@ -1027,14 +1130,16 @@ export function apply(ctx, config = {}) {
       child.stderr.on('data', (d) => { out += d; });
       child.on('error', (e) => resolve({ ok: false, error: String((e && e.message) || e) }));
       child.on('close', (code) => {
-        const m = out.match(/AUDIT_RESULT=(\{.*\})/);
+        const m = out.match(/(?:EXPERT|AUDIT)_RESULT=(\{.*\})/);
         let parsed = null;
         try { parsed = m ? JSON.parse(m[1]) : null; } catch {}
         if (parsed) resolve({ ...parsed, exitCode: code });
-        else resolve({ ok: false, error: '审计进程无结果（exit ' + code + '）：' + out.trim().slice(-300) });
+        else resolve({ ok: false, error: `${mode} 进程无结果（exit ${code}）：` + out.trim().slice(-300) });
       });
     });
   }
+  function runAuditCli(dimension, opts) { return runExpertCli('reviewer', dimension, opts); }
+  function runGuideCli(dimension, opts) { return runExpertCli('guide', dimension, opts); }
 
   // ---------- v1.2：上下文水位（T2.4；60s 缓存，最多 3 个最近会话） ----------
   let wmCache = { at: 0, data: [] };
@@ -1354,6 +1459,27 @@ export function apply(ctx, config = {}) {
 
     if (p === '/api/state' && req.method === 'GET') return json(res, 200, collectState());
 
+    if (p === '/api/terminal/status' && req.method === 'GET') {
+      return json(res, 200, terminalSnapshot(Number(url.searchParams.get('since') || 0)));
+    }
+    if (p === '/api/terminal/open' && req.method === 'POST') {
+      if (role !== 'modeler') return json(res, 403, { ok: false, error: '半交互终端仅 Master 可用' });
+      return json(res, 200, terminalOpen());
+    }
+    if (p === '/api/terminal/input' && req.method === 'POST') {
+      if (role !== 'modeler') return json(res, 403, { ok: false, error: '半交互终端仅 Master 可用' });
+      const b = await readBody(req);
+      if (b.__badEncoding || b.__parseFail) return json(res, 400, { ok: false, error: '请求体解析失败' });
+      return json(res, 200, terminalInput(b.data));
+    }
+    if (p === '/api/terminal/poll' && req.method === 'GET') {
+      return json(res, 200, terminalSnapshot(Number(url.searchParams.get('since') || 0)));
+    }
+    if (p === '/api/terminal/close' && req.method === 'POST') {
+      if (role !== 'modeler') return json(res, 403, { ok: false, error: '半交互终端仅 Master 可用' });
+      return json(res, 200, terminalClose());
+    }
+
     if (p === '/api/a2a/status' && req.method === 'GET') {
       return json(res, 200, { ok: true, ...a2aSnapshot() });
     }
@@ -1469,9 +1595,9 @@ export function apply(ctx, config = {}) {
       const b = await readBody(req);
       if (b.__badEncoding) return json(res, 400, { ok: false, error: '请求内容编码损坏（非 UTF-8）', rawLen: b.rawLen, rawHead: b.rawHead });
       if (b.__parseFail) return json(res, 400, { ok: false, error: '请求体解析失败', rawLen: b.rawLen, rawHead: b.rawHead });
-      const dim = ['model', 'code', 'paper'].includes(String(b.dimension)) ? String(b.dimension) : '';
-      if (!dim) return json(res, 400, { ok: false, error: '非法审计维度（model|code|paper）' });
-      if (auditState.running) return json(res, 409, { ok: false, error: '已有审计在运行（本端串行执行）' });
+      const dim = ['model', 'code'].includes(String(b.dimension)) ? String(b.dimension) : '';
+      if (!dim) return json(res, 400, { ok: false, error: '非法审核维度（model|code；paper 维度仅保留 CLI 兼容）' });
+      if (auditState.running) return json(res, 409, { ok: false, error: '已有审核在运行（本端串行执行）' });
       const dry = await runAuditCli(dim, { dryRun: true, model: b.model, note: b.note });
       if (!dry.ok) return json(res, 400, { ok: false, error: dry.error || '材料预检失败' });
       if (dry.estFee > (dry.limit || 30) && !b.confirm) {
@@ -1495,7 +1621,7 @@ export function apply(ctx, config = {}) {
             const pad = (n) => String(n).padStart(2, '0');
             const nid = 'N-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds()) + '-' + Math.random().toString(36).slice(2, 4);
             const rec = { id: nid, from: role, to: 'modeler', kind: 'info', urgency: 'normal', scope: '', status: 'pending', at: now.toISOString() };
-            const text = '---\n' + Object.entries(rec).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n## 正文\nReviewer 审阅（' + dim + '）完成：报告 ' + r.reportPath + '（耗时 ' + r.elapsedS + 's，估算 ¥' + r.estFee + '）\n';
+            const text = '---\n' + Object.entries(rec).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n## 正文\nReviewer 审核（' + dim + '）完成：报告 ' + r.reportPath + '（耗时 ' + r.elapsedS + 's，估算 ¥' + r.estFee + '）\n';
             writeFileSync(path.join(dir, nid + '.md'), text);
             auditState.result = { ...r, notice: nid };
           } catch {}
@@ -1505,6 +1631,48 @@ export function apply(ctx, config = {}) {
     }
     if (p === '/api/audit/status' && req.method === 'GET') {
       return json(res, 200, { ...auditState });
+    }
+
+    // ---- v1.6：Guide（指导者）----
+    if (p === '/api/guide' && req.method === 'POST') {
+      if (role !== 'modeler') return json(res, 403, { ok: false, error: '仅 Master 可发起 Guide 指导（控制专家模型成本）' });
+      const b = await readBody(req);
+      if (b.__badEncoding) return json(res, 400, { ok: false, error: '请求内容编码损坏（非 UTF-8）', rawLen: b.rawLen, rawHead: b.rawHead });
+      if (b.__parseFail) return json(res, 400, { ok: false, error: '请求体解析失败', rawLen: b.rawLen, rawHead: b.rawHead });
+      const dim = ['direction', 'model', 'code'].includes(String(b.dimension)) ? String(b.dimension) : '';
+      if (!dim) return json(res, 400, { ok: false, error: '非法指导维度（direction|model|code）' });
+      if (guideState.running) return json(res, 409, { ok: false, error: '已有指导在运行（本端串行执行）' });
+      const dry = await runGuideCli(dim, { dryRun: true, model: b.model, note: b.note });
+      if (!dry.ok) return json(res, 400, { ok: false, error: dry.error || '材料预检失败' });
+      if (dry.estFee > (dry.limit || 50) && !b.confirm) {
+        return json(res, 200, { ok: false, needsConfirm: true, est: { estFee: dry.estFee, estTokens: dry.estTokens, chars: dry.chars, files: dry.files } });
+      }
+      guideState.running = true;
+      guideState.id = 'GUID-' + Date.now().toString(36);
+      guideState.dimension = dim;
+      guideState.startedAt = new Date().toISOString();
+      guideState.result = null;
+      const gid = guideState.id;
+      runGuideCli(dim, { confirm: !!b.confirm, model: b.model, note: b.note }).then((r) => {
+        guideState.running = false;
+        guideState.result = r;
+        if (r && r.ok && r.reportPath) {
+          try {
+            const rec = createNotice({
+              to: 'modeler',
+              kind: 'info',
+              urgency: 'normal',
+              scope: '',
+              body: 'Guide 指导（' + dim + '）完成：报告 ' + r.reportPath + '（耗时 ' + r.elapsedS + 's，估算 ¥' + r.estFee + '）',
+            });
+            guideState.result = { ...r, notice: rec.id };
+          } catch {}
+        }
+      });
+      return json(res, 200, { ok: true, started: true, id: gid, dimension: dim });
+    }
+    if (p === '/api/guide/status' && req.method === 'GET') {
+      return json(res, 200, { ...guideState });
     }
 
     // ---- v1.2 T5.4：桥健康代理（面板展示上游额度/鉴权状态） ----
@@ -1555,6 +1723,48 @@ export function apply(ctx, config = {}) {
         }
         reviewerCfgCache = { at: 0, data: null };
         return json(res, 200, { ok: true, path: reviewerJsonPath() });
+      } catch (e) {
+        return json(res, 500, { ok: false, error: String((e && e.message) || e).slice(0, 220) });
+      }
+    }
+
+    // ---- v1.6：Guide 配置读写（MMCAS guide.json；key 仍走 dsh credentials） ----
+    if (p === '/api/guide/config' && req.method === 'GET') {
+      if (Date.now() - guideCfgCache.at < 30000 && guideCfgCache.data) return json(res, 200, guideCfgCache.data);
+      const runner = findAuditRunner();
+      if (!runner) return json(res, 200, { ok: false, error: '未找到 audit-run.mjs（配置 coreDir）' });
+      const r2 = spawnSync(process.execPath, [runner, '--mode', 'guide', '--show-config', '--dsh-home', auditDshHome(), '--guide-config', guideJsonPath()], { encoding: 'utf8', timeout: 20000, windowsHide: true });
+      let cfg = null;
+      try { cfg = JSON.parse((r2.stdout || '').trim()); } catch {}
+      const data = cfg ? { ok: true, ...cfg } : { ok: false, error: ('解析失败: ' + String(r2.stderr || r2.stdout || '').trim()).slice(0, 220) };
+      guideCfgCache = { at: Date.now(), data };
+      return json(res, 200, data);
+    }
+    if (p === '/api/guide/config' && req.method === 'PUT') {
+      try {
+        const b = await readBody(req);
+        const mmcasHome = process.env.MMCAS_HOME || path.join(os.homedir(), 'AppData', 'Local', 'mmcas');
+        const dshHome = process.env.DSH_HOME || path.join(mmcasHome, 'dsh-home');
+        const credPath = path.join(dshHome, '.credentials.yaml');
+        const cur = readGuideJson() || {};
+        const endpointIn = b.endpoint !== undefined ? String(b.endpoint).trim() : '';
+        const envIn = b.apiKeyEnv !== undefined ? String(b.apiKeyEnv).trim() : '';
+        const modelIn = b.model !== undefined ? String(b.model).trim() : '';
+        const nxt = {
+          endpoint: endpointIn || cur.endpoint || 'http://127.0.0.1:3220/v1/responses',
+          apiKeyEnv: envIn || cur.apiKeyEnv || 'GUIDE_API_KEY',
+          model: modelIn || cur.model || 'gpt-6-astra',
+          protocol: String(b.protocol !== undefined ? b.protocol : (cur.protocol || 'responses')) === 'chat' ? 'chat' : 'responses',
+          maxFeeCny: Number(b.maxFeeCny !== undefined ? b.maxFeeCny : (cur.maxFeeCny || 50)) || 50,
+        };
+        if (!writeGuideJson(nxt)) return json(res, 500, { ok: false, error: 'guide.json 写入失败' });
+        if (b.apiKey && String(b.apiKey).trim()) {
+          const k = String(b.apiKey).trim();
+          const c = existsSync(credPath) ? readFileSync(credPath, 'utf8') : 'version: 1\nrefs:\n';
+          writeFileSync(credPath, setCredRef(c, nxt.apiKeyEnv, k));
+        }
+        guideCfgCache = { at: 0, data: null };
+        return json(res, 200, { ok: true, path: guideJsonPath() });
       } catch (e) {
         return json(res, 500, { ok: false, error: String((e && e.message) || e).slice(0, 220) });
       }
@@ -1754,6 +1964,7 @@ export function apply(ctx, config = {}) {
     if (pollerTimer) clearInterval(pollerTimer);
     if (a2aTimer) clearInterval(a2aTimer);
     if (a2aServer) a2aServer.stop().catch(() => {});
+    if (terminal.proc) { try { terminal.proc.kill(); } catch {} }
     releasePollerLock();
     server.close();
   });

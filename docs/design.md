@@ -2,7 +2,7 @@
 
 > Mathematical Modeling Competition Assistance System（数学建模竞赛辅助系统）
 > 2026-09-08 初稿 / v1.1 开工修订 / v1.2 赛后实战修订 / v1.3 dsh 0.2.1 适配 / v1.4 向量记忆检索。
-> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」完成；v1.3.0 dsh 0.2.1（CLI + 桌面端）适配已发布（tag `v1.3.0`）；v1.4 向量记忆检索功能完成（待发布）；v1.5 A2A 直连 MVP 已落地（进行中，见 §17 / ROADMAP）。
+> 状态：v1.0 全链路内测与开源发布完成；v1.2「实战修订」完成；v1.3.0 dsh 0.2.1（CLI + 桌面端）适配已发布（tag `v1.3.0`）；v1.4 向量记忆检索功能完成（待发布）；v1.5 A2A 直连 MVP 已落地（进行中，见 §17）；v1.6 Guide / Reviewer 专家双角色已落地（进行中，见 §18）。
 
 ## 0. 项目定位
 
@@ -124,6 +124,7 @@ git 保底：冲突永不静默丢失，冲突文件由人类裁决。
   - `packages/modeler`（Master）：数学建模知识库、文献、建模方法论。
   - `packages/coder`：数值计算、优化求解、并行/长任务队列、可视化。
   - `packages/writer`：论文写作、图表规范、排版。
+- 专家层（非执行，v1.6）：`packages/guide`（Guide：方向/模型/实现路线）、`packages/reviewer`（Reviewer：模型/代码漏洞审核）；共享 `packages/core/audit/audit-run.mjs`，不接任务卡、不执行工作。
 
 ### 5.2 零注册原则
 
@@ -207,7 +208,7 @@ default: deepseek
 ## 7. 总控面板（v6 = dsh 内嵌插件 @mmcas/dsh-panel，合并版）
 
 - 定位：dsh 侧栏内嵌抽屉，**不是独立服务**；数据走 host 插件回环 HTTP（web：127.0.0.1:3210，端口可配，web 端口 +11 约定；桌面端：固定 19398，dsh-app:// 无端口）。
-- **按钮（三端一致）**：总控 / 任务看板 / 共享记忆（v1.4 含搜索）/ **审计室**。
+- **按钮（三端一致）**：总控 / 任务看板 / 共享记忆（v1.4 含搜索）/ **审核室**（v1.6）/ **指导室**（v1.6，仅 Master）。
 - **总控抽屉**：同步水位 + 成员设备 + **上下文水位**（v1.2）+ **消息区（A2A / notices）**（v1.5）+ 环境同步区 + 操控门户（仅 Master）。
 - **任务看板**：三列板（priority 排序）+ 新建/编辑/详情（DAG 门控 + 权限护栏）+ **30s 自动 git 同步**（fetch → 落后则 merge（快进优先）→ 领先则 push；单飞——定时器与 HTTP 共用一次同步；默认不 add/commit 以免与守护抢锁；冲突/失败显式上报）+「刷新」「立即同步」按钮 + WIP 计数显示（限制可配，默认不限）。
 - **调度核心（自动接取 v2，进主线）**：
@@ -217,7 +218,7 @@ default: deepseek
   - **单例锁**（v1.2）：多实例共用状态目录时，第二实例自动禁用 autoClaim 并在 `/api/state` 显性上报（防重复派发）。
   - 派发前**二次读卡**（只认文件最末状态，防重编号/打回后的过期快照派发）+ 复核"非 doing 且无活跃 claim"；目标会话**排除已处理该卡的会话**（card→session 映射参与去重）。
 - **上下文水位**：`/api/state` 暴露 token-meter 读数（各端最近会话），接近阈值警示（§12.4）。
-- **审计室**（三端）：选维度 → 选材料 → 调本地桥 → 报告 + 通知（§14）。
+- **审核室 / 指导室**（v1.6）：审核室审 model/code；指导室仅 Master（direction/model/code）；报告 + 通知（§14 / §18）。
 - 既述能力：记忆浏览 ✅、设备状态 ✅、provider 切换 UI ✗（用 CLI 切换器，UI 后置）、权限审批 UI ✗、SSH 控制台 ◐（Master 操控门户 /api/exec，非完整 WebTTY）。
 - 工程约束（多实例并存）：host 数据服务端口必须可配 + EADDRINUSE 防御；client 端 API base 从页面端口推导（3199→3210、3200→3211，其余一律 3210；桌面端 dsh-app:// 固定 19398）；演示/对比用 `--patch` 双实例（同 id 覆盖整份 config，须写全字段）。
 
@@ -257,7 +258,7 @@ default: deepseek
 - **CLI + 桌面端**：适配 dsh 0.2.1-rc.3；桌面端使用独立 `DSH_HOME`、`MMCAS-Desktop` 启动器与面板端口 19398。
 - **profile 合并**：`write-config` / `switch-provider` / `install-bridge` 按条合并 `cordis.patch.yml`，保留 dsh 设置、插件与自定义 panel 端口。
 - **preset 同步**：standard preset 加入 `time-context` / `tool-schedule`，移除 `backgroundMode` / `tool-ralph` / 旧 subagent 行。
-- **Reviewer 迁移**：审阅室配置落到 MMCAS 自有 `reviewer.json`，旧 `settings.yaml` / `.imported` 只读兼容。
+- **Reviewer 迁移**：审核室配置落到 MMCAS 自有 `reviewer.json`，旧 `settings.yaml` / `.imported` 只读兼容。
 - **稳定性**：冷会话 `prompt` signal、目标会话活跃度、审计报告唯一文件名、credentials `refs`、New Session 本地化匹配。
 
 ### v1.4 向量化记忆检索（功能完成，2026-11-02）
@@ -276,6 +277,14 @@ default: deepseek
 - **入口**：`a2a.mjs send/ping/status/peers/config`；面板总控 A2A 状态 + 消息发送（优先 A2A，失败回落）。
 - **桌面端**：A2A 随面板宿主启动，token 路径与端口一致；面板数据端仍为 19398，A2A 19400。
 - **回归**：44 项 A2A 测试（核心 18 / 适配 10 / 面板 9 / CLI 7）；实机 tailnet 演练与每角色 token 轮换待 M2。
+
+### v1.6 专家双角色 Guide / Reviewer（已落地，2026-11-04）
+
+- **角色包**：`packages/guide`（方向/模型/实现路线）与 `packages/reviewer`（模型/代码审核）；B-Audit 审计提示词与“更好数学模型”思路迁入系统。
+- **共享运行器**：`audit-run.mjs --mode reviewer|guide`；独立 `reviewer.json` / `guide.json`；报告 `audit/` / `guidance/`。
+- **边界**：Guide 仅 Master 发起、只给方向与路线；Reviewer 只审数学建模内容（model/code），不评写作；两者都不接任务卡、不执行。
+- **面板**：审核室（全员）+ 指导室（仅 Master）；配置、状态、预算确认、报告与通知。
+- **回归**：Guide 9 + 面板 Guide 7；Reviewer 16 项回归通过。
 
 ### v1.2 实战修订（已完成，2026-09-16 发布）
 
@@ -301,7 +310,7 @@ default: deepseek
 - **凭证零入库**：所有 key/token 只存在于本地配置文件（.gitignore 覆盖）或环境变量；代码只读配置，仓库永远只有 `*.example` 占位。开源 = 零改动。
 - **暴露面登记**：所有涉及凭证的位置、性质、开源前处理方式统一登记于 `docs/secrets-registry.md`，新增凭证渠道必须先登记。
 - **开源路线**：完成且运行良好后开源到 GitHub；开源前执行：脱敏 docs（人员/设备/地点）、清 git 历史中的敏感信息（如有）、README 只写功能与差异。
-- **发布状态**：v1.2.0 与 v1.3.0 已开源（MIT）；v1.3.0 tag 指向 dsh 0.2.1 适配完成点；v1.4 功能已完成、待发布；v1.5 A2A MVP 已落地（本地回归通过，实机演练待完成）。后续修订按 Milestone 推进，每次发布重复上述检查。
+- **发布状态**：v1.2.0 与 v1.3.0 已开源（MIT）；v1.3.0 tag 指向 dsh 0.2.1 适配完成点；v1.4 功能已完成、待发布；v1.5 A2A MVP 与 v1.6 Guide/Reviewer 已落地（本地回归通过，实机演练/费用标定待完成）。后续修订按 Milestone 推进，每次发布重复上述检查。
 
 ## 12. 会话生命周期与上下文（v1.2）
 
@@ -362,18 +371,19 @@ dsh 自带压缩三件套（`compaction-basic` + `command-compact` + `tool-resul
 - 纪律（persona/rules）：对已完成任务的需求变更、追加要求、结果不达标 ⇒ **必须打回**，禁止默默改；打回即时生效（不等人类说）。
 - 治理文档：`memory/shared/rules.md` 增补（打回/回程/消息纪律）；三个角色文档与 specs v4 同步。
 
-## 14. 独立审计专家实例（v1.2）
+## 14. 审核者 Reviewer（v1.2 / v1.6 收敛）
 
-- **命名与定位**：**Reviewer（审阅人）**——MMCAS 第四方：独立**工作流**（不接任务卡、不进三联通调度、不参与看板），但属**系统内组件**（配置 / 入口 / 报告 / 通知均在体系内）。
-- 定位：对**数学模型 / 代码成品 / 最终论文**三类产物做第三方独立审阅——三端任何一端随时可发起；审阅者独立于三端 agent 与任务链（独立实例、独立提示词），从机制上避免"自己审自己"。
-- 通道（可配置）：dsh settings 的 `reviewer:` 段（`endpoint / apiKeyEnv / model / protocol / maxFeeCny`）——默认走本地 `codex-bridge` → `gpt-6-astra`；可换成任意 OpenAI 兼容端点（responses 或 chat/completions 协议），**换专家模型只改配置**；桥不可用时给降级提示（不静默失败）；面板「审阅室」可直接读写该配置。
-- **形态**：面板「审阅室」按钮（三端）：选维度 → （可选）补充说明 → 执行 → 报告落 `workspace/audit/AUDIT-<维度>-<ts>.md` + 生成一条通知（§13.1）。
-- **实现要点（v1.2 落地）**：
-  - 运行器 `pkg/core/audit/audit-run.mjs`（CLI 与面板同源）：材料收集（维度白名单目录，排除 `_*`/产物目录/数据扩展名，按 mtime 预算截断）→ 脱敏（内置用户路径/邮箱/手机号规则，`--scrub` 追加）→ payload → 本地桥 **Responses SSE** → 报告 + `.meta.json`。
-  - **预算守门**：估算费用 = 材料字符 × 7e-5 元（B-Audit 实战标定）；> ¥30 需显式确认（面板弹窗 / CLI `--confirm`）；材料 > 60 万字符上限拒绝。
-  - **桥健康可见（§3.5）**：桥 `/health` 暴露 `lastUpstreamError`（401/402/429 + 摘要）与 `lastSuccessAt`；面板审计室与总控可读（经 `/api/bridge/health` 代理）。
-  - 三模板：`instructions/{model,code,paper}.md`（泛化自实战审计提示词）；无桥环境给出明确降级提示，不静默。
-- 材料边界：只发**摘编/汇总**（如官方演练日志的文本摘编），不发原始二进制数据包；打包后过敏感扫描（队伍号/用户名/路径替换）。
+- **命名与定位**：**Reviewer（审核者）**——MMCAS 第四方：独立**工作流**（不接任务卡、不进三联通调度、不参与看板），但属**系统内组件**（配置 / 入口 / 报告 / 通知均在体系内）。
+- 定位：只审**数学模型 / 代码成品**，聚焦数学建模内容本身（假设、推导、数值正确性、可复现性、代码与结论一致性）；**不评写作与排版**。`paper` 维度仅保留 CLI 兼容，面板不再展示。
+- 通道（可配置）：`<MMCAS_HOME>/reviewer.json`（`endpoint / apiKeyEnv / model / protocol / maxFeeCny`）——默认走本地 `codex-bridge` → `gpt-6-astra`；可换成任意 OpenAI 兼容端点（responses 或 chat/completions 协议），**换专家模型只改配置**；桥不可用时给降级提示（不静默失败）；面板「审核室」可直接读写该配置。
+- **形态**：面板「审核室」（三端）：选维度（model/code）→（可选）补充说明 → 执行 → 报告落 `workspace/audit/AUDIT-<维度>-<ts>.md` + 生成一条通知（§13.1）。
+- **实现要点**：
+  - 运行器 `pkg/core/audit/audit-run.mjs --mode reviewer`（CLI 与面板同源）：材料收集（维度白名单目录，排除 `_*`/产物目录/数据扩展名，按 mtime 预算截断）→ 脱敏 → payload → 本地桥 **Responses SSE** → 报告 + `.meta.json`。
+  - 提示词位于 `packages/reviewer/instructions/{model,code,paper}.md`（从 B-Audit 实战提示词迁入；`packages/core/audit/instructions` 保留只读回退）。
+  - **预算守门**：估算费用 = 材料字符 × 7e-5 元（B-Audit 实战标定）；> 阈值需显式确认（面板弹窗 / CLI `--confirm`）；材料 > 60 万字符上限拒绝。
+  - **桥健康可见（§3.5）**：桥 `/health` 暴露 `lastUpstreamError`（401/402/429 + 摘要）与 `lastSuccessAt`；面板审核室与总控可读（经 `/api/bridge/health` 代理）。
+- 材料边界：只发**摘编/汇总**，不发原始二进制数据包；打包后过敏感扫描（队伍号/用户名/路径替换）。
+- **Guide 另见 §18**：Reviewer 往回查漏洞；Guide 往前指方向。
 
 ## 15. 调度修订：WIP 硬限制移除（v1.2）
 
@@ -441,7 +451,7 @@ node memory-index.mjs --workspace <ws> --stats [--stale-days N] [--json]
 
 - 面板 `GET /api/memory/search?q=&mode=&role=&limit=&since=&until=&backend=`：返回 `{ok, results[], total, mode, effectiveMode, fallback, backend, provider, ...}`；非法参数 400，缺工作区 400。
 - 面板「共享记忆」抽屉：搜索框 + 模式/角色筛选 + 分数 + 降级提示；无查询时显示最近条目。
-- 维护：`--stats --stale-days N` 输出 `staleDocs / staleCutoff / oldestDate`（非破坏性提示）；归档工具留作可选后续。
+- 维护：`--stats --stale-days N` 输出 `staleDocs / staleCutoff / oldestDate`（非破坏性提示）；`memory-archive.mjs --before <date>` 默认 dry-run、`--apply` 移动到 `memory/<role>/archive/`，搜索默认排除、`--include-archive` 包含。
 - 打包：`download-vendor.sh` 从 npmmirror 拉取 `sqlite-vec-windows-x64@0.1.9`，`pack.mjs` 复制 `vec0.dll` 到 `pkg/core/memory/`，`audit-recheck.sh` 校验记忆模块与测试随包。
 
 ## 17. A2A 直连通道（v1.5）
@@ -506,4 +516,76 @@ node a2a.mjs config
 ### 17.8 当前状态与后续
 
 - 已落地：协议/发现/服务端/客户端/CLI、面板状态与发送、通知回落、桌面端、打包/token/防火墙、44 项测试。
-- 待办（M2/M3）：每角色 token 轮换、重连/心跳/背压/离线队列、实机 tailnet 三端演练、WebTTY、角色技能/审计维度、记忆归档。
+- 待办（M2/M3）：每角色 token 轮换、重连/心跳/背压/离线队列、实机 tailnet 三端演练；完整 PTY WebTTY 见 §19；记忆归档与半交互终端已落地；角色技能/审计维度收敛见 §18。
+
+## 18. 专家双角色：Guide / Reviewer（v1.6）
+
+### 18.1 定位与分工
+
+- **Guide（指导者）**：往前看。用更强/更贵的专家模型判断方向、识别关键矛盾、给出 2–3 条攻坚路线与分工；不写代码、不写论文、不改任务卡。
+- **Reviewer（审核者）**：往回看。只审数学模型与代码漏洞（假设、推导、数值正确性、可复现性、代码与结论一致性）；不评写作/排版。
+- 两者都独立于三端执行 agent 与任务链，但配置、入口、报告、通知全部在 MMCAS 内；避免“自己审自己/自己指导自己”。
+- 执行仍由建模手、编程手、论文手完成；专家角色的输出是**建议/审核报告**，不是执行结果。
+
+### 18.2 与 dsh-superagent 设计对齐（参考）
+
+参考 `deepseek-ai/dsh-superagent-prototype`（MIT，研究原型）的“少占用人类注意力”原则，落成四条约束：
+
+1. **只在被请求时运行**：Guide 仅 Master 显式发起；Reviewer 由三端显式发起。无自动巡检、无主动插话。
+2. **一次请求 = 一个工作项**：每次运行有 id、维度、发起时间、材料快照、模型/配置、报告路径与 meta；本端串行执行，互不干扰。
+3. **报告即交付**：完成/失败/预算超限才发通知；正常运行不产生噪音。报告明确区分证据/推测/必须修正。
+4. **面板只显示需要人处理的事**：运行中、失败、待确认预算、最近报告；健康状态不占空间。
+
+与 superagent 的 Source/Trigger/Ticket/Assignment/Report 对应关系：MMCAS 暂不引入完整工作项状态机，先做轻量版（面板内存状态 + 报告落盘）；持久化工作项/重试队列留作 v1.7 候选。
+
+### 18.3 实现
+
+- 共享运行器：`packages/core/audit/audit-run.mjs`，`--mode reviewer|guide`。
+- Reviewer：`--dimension model|code`（`paper` 仅 CLI 兼容）；提示词 `packages/reviewer/instructions/*.md`；配置 `<MMCAS_HOME>/reviewer.json`；报告 `workspace/audit/AUDIT-*.md`。
+- Guide：`--dimension direction|model|code`；提示词 `packages/guide/instructions/*.md`；配置 `<MMCAS_HOME>/guide.json`；报告 `workspace/guidance/GUIDE-*.md`。
+- 材料收集：Reviewer 用 model→`workspace/modeling+analysis`、code→`workspace/code`；Guide direction 额外包含 `tasks/` 与 `workspace/paper`，model/code 按需组合。
+- 协议：Responses（SSE）或 chat/completions；默认本地 `codex-bridge`（3220），可换任意 OpenAI 兼容端点。
+- 脱敏/预算/字符上限沿用 v1.2：内置路径/邮箱/手机号规则，`--scrub` 追加；估算 ¥/字符按 B-Audit 标定；超阈值需确认。
+- 角色包：`packages/guide/`、`packages/reviewer/`（role.md + README + config.example.json + instructions/），随 `pack.mjs` 打入 `pkg/guide`、`pkg/reviewer`。
+
+### 18.4 面板
+
+- Master 侧按钮：**审核室**（全员可见）与**指导室**（仅 Master，控制专家模型成本）。
+- 审核室：model/code 两个维度；配置 `reviewer.json`；报告 `audit/`。
+- 指导室：direction/model/code；配置 `guide.json`；报告 `guidance/`；显示预算阈值、桥健康、运行状态与最近结果。
+- API：`POST /api/audit`、`GET /api/audit/status`、`GET|PUT /api/audit/config`；`POST /api/guide`、`GET /api/guide/status`、`GET|PUT /api/guide/config`。
+- 完成时向 modeler 写一条 notices 通知；不自动创建任务卡。
+
+### 18.5 安全与成本
+
+- 不发送原始二进制/大数据包；只发文本摘编，先脱敏再打包。
+- 预算阈值：Reviewer 默认 ¥30，Guide 默认 ¥50；超过阈值面板弹窗/CLI `--confirm`。
+- key 仍存 dsh `.credentials.yaml` 的 `refs`，面板不回显；配置 JSON 只存 `apiKeyEnv`。
+- 专家角色不执行命令、不改工作区；只读材料、写报告。
+- 桌面端与 CLI web 共用同一面板宿主；专家调用走面板宿主，无需额外端口。
+
+### 18.6 当前状态
+
+- 已落地：Guide/Reviewer 角色包、共享运行器、双层配置、面板两室、B-Audit 提示词迁入、Guide 三分支提示词、预算/脱敏/报告、Guide 9 + 面板 7 项测试。
+- 待办：专家工作项持久化（跨重启恢复/重试）、Guide 与任务卡联动（建议转卡）、实机专家模型调用与费用标定。
+
+## 19. 半交互 WebTTY（v1.5 M3 MVP）
+
+### 19.1 定位与边界
+
+- 面板内终端，仅 Master 可见/可用；用于远程诊断、查看日志、跑交互式命令，不必另开 SSH 客户端。
+- 当前是**半交互 MVP**：持久 shell 进程 + stdin/stdout 管道 + 轮询输出；不具备完整 PTY 的 TAB 补全、Ctrl+C 信号语义、全屏 TUI。完整 PTY 列入后续 spike。
+- Slave 不开放入站终端；Master 侧仍受 Tailscale ACL 与人类操作约束。
+
+### 19.2 实现
+
+- 面板宿主维护单终端会话：`{proc, seq, chunks, running, shell, cwd}`；输出按 seq 分块缓存（最多 800 块）。
+- 端点：`GET /api/terminal/status`、`POST /api/terminal/open`、`POST /api/terminal/input`、`GET /api/terminal/poll?since=N`、`POST /api/terminal/close`。
+- 输入逐条写审计日志 `<MMCAS_HOME>/terminal-audit.log`（时间 + 角色 + 命令）；不记录输出；UI 提示不要输入密钥。
+- 默认 shell：Windows `cmd.exe /Q /K chcp 65001`，其他平台 `$SHELL -i`；测试可覆盖 `config.terminal.shell/args`。
+- 面板「终端」抽屉：输出区 + 命令输入 + 清屏/重开/关闭；打开时自动连接，关闭抽屉不杀进程（可重开接管）。
+
+### 19.3 当前状态
+
+- 已落地：Master-only 终端、持久 shell、轮询输出、命令审计、Slave 403、6 项面板测试。
+- 待办：完整 PTY（TAB/Ctrl+C/全屏）、多终端标签、输出持久化/回放、命令白名单/审批。

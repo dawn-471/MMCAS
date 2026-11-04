@@ -12,8 +12,10 @@ MMCAS 共享核心，三个角色包共用。队友侧对其完全无感知。
 | `switch-provider.mjs` | v2 | provider/模型切换：写活动 profile 的 `cordis.patch.yml`（llm-deepseek / agent-default-model；保留已有键）+ credentials；legacy settings.yaml 只读/兼容同步；`--model` 指定模型 |
 | `taskcard/taskcard.mjs` | v3 | 任务卡 CLI 护栏：三状态迁移 + 依赖门控 + WIP 可配（默认 0=不限）+ deps 编辑 + 删除防护（被依赖时拒绝，`--force` 可强制） |
 | `panel/panel.mjs` | v1 | 旧本地渲染器（已退役，面板改为 dsh 内嵌插件 @mmcas/dsh-panel） |
+| `audit/audit-run.mjs` + `test-audit.mjs` + `test-guide.mjs` | v1.6 | 专家共享运行器：`--mode reviewer` 审模型/代码漏洞，`--mode guide` 出方向/模型/实现路线；材料收集/脱敏/预算/报告 + 面板同源 |
 | `memory/memory-embed.example.json` | v1.4 | 可选 embeddings 配置模板（`<MMCAS_HOME>/memory-embed.json`） |
 | `memory/memory-log.mjs` + `memory-index.mjs` + `memory-search.mjs` | v1.4 | 记忆文件流 + 词匹配/哈希向量/混合/语义检索；可选 OpenAI 兼容 embeddings 与 sqlite-vec；本机索引缓存按文件变更自动重建 |
+| `memory/memory-archive.mjs` | v1.5 | 按日期归档旧记忆到 `memory/<role>/archive/`（默认 dry-run）；搜索默认排除，`--include-archive` 可包含 |
 | `ssh/sshctl.mjs` | v1 | Master→Slave 控制：status / discover（从 device-info-*.md 自动填设备）/ shell / copy / pull |
 | `write-config.mjs` | v2 | 队友机配置生成：sync.config.json + providers.yaml + 合并式 web/desktop profile（persona、preset-standard、面板、port=19398 桌面、a2aPort=19400）+ dsh workspace 注册 |
 | `register-workspace.mjs` | v1 | 幂等注册 git 仓为 dsh workspace |
@@ -28,6 +30,7 @@ node memory/memory-search.mjs --workspace <ws> "数值稳定性"
 node memory/memory-search.mjs --workspace <ws> --mode semantic --json "蒙特卡洛"
 node memory/memory-index.mjs --workspace <ws> --provider openai --backend sqlite
 node memory/memory-search.mjs --workspace <ws> --stats --stale-days 30
+node memory/memory-archive.mjs --workspace <ws> --before 2026-01-01 [--apply]
 ```
 
 - 默认 `hash`：离线、零依赖，索引缓存于 `<MMCAS_HOME>/memory-index/`。

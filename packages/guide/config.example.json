@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "endpoint": "http://127.0.0.1:3220/v1/responses",
+  "apiKeyEnv": "GUIDE_API_KEY",
+  "model": "gpt-6-astra",
+  "protocol": "responses",
+  "maxFeeCny": 50
+}

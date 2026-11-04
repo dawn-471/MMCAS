@@ -74,6 +74,8 @@ cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-embed.example.json'
 cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-search.mjs'), path.join(PKG, 'core', 'memory', 'test-memory-search.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-semantic.mjs'), path.join(PKG, 'core', 'memory', 'test-memory-semantic.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-sqlite.mjs'), path.join(PKG, 'core', 'memory', 'test-memory-sqlite.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'memory-archive.mjs'), path.join(PKG, 'core', 'memory', 'memory-archive.mjs'));
+cpSync(path.join(ROOT, 'packages', 'core', 'memory', 'test-memory-archive.mjs'), path.join(PKG, 'core', 'memory', 'test-memory-archive.mjs'));
 const vecExt = path.join(ROOT, 'vendor', 'sqlite-vec', 'vec0.dll');
 if (existsSync(vecExt)) cpSync(vecExt, path.join(PKG, 'core', 'memory', 'vec0.dll'));
 else console.warn('提示: 未找到 vendor/sqlite-vec/vec0.dll，包内不含 sqlite-vec 加速（JSON 索引仍可用）');
@@ -92,6 +94,9 @@ cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'fix-ssh.bat'), path.join(BU
 cpSync(path.join(ROOT, 'packages', 'core', 'codex-bridge', 'codex-bridge.mjs'), path.join(PKG, 'core', 'codex-bridge', 'codex-bridge.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'codex-bridge', 'install-bridge.mjs'), path.join(PKG, 'core', 'codex-bridge', 'install-bridge.mjs'));
 cpSync(path.join(ROOT, 'packages', 'core', 'config', 'providers.example.yaml'), path.join(BUILD, 'config', 'providers.example.yaml'));
+// 专家角色包（Guide / Reviewer：提示词、配置模板、角色说明）
+cpSync(path.join(ROOT, 'packages', 'guide'), path.join(PKG, 'guide'), { recursive: true });
+cpSync(path.join(ROOT, 'packages', 'reviewer'), path.join(PKG, 'reviewer'), { recursive: true });
 // 角色人格文件（write-config 写入 dsh profile persona）
 cpSync(path.join(ROOT, 'packages', ROLE, 'role.md'), path.join(PKG, 'core', 'role.md'));
 // 角色 skills（write-config 拷入 <DSH_HOME>/skills/，dsh-skill-filesystem rank 400）

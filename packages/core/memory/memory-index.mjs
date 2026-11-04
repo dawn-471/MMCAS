@@ -40,36 +40,39 @@ export function tokenize(text) {
   return out;
 }
 
-export function scanMemory(workspace) {
+export function scanMemory(workspace, options = {}) {
   const root = path.join(workspace, 'memory');
   const files = {};
   const entries = [];
   if (!existsSync(root)) return { files, entries };
   for (const role of ROLES) {
-    const dir = path.join(root, role);
-    if (!existsSync(dir)) continue;
-    for (const name of readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md')) {
-      const file = path.join(dir, name);
-      let stat;
-      let raw;
-      try {
-        stat = statSync(file);
-        raw = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
-      } catch {
-        continue;
-      }
-      const rel = role + '/' + name;
-      files[rel] = { mtimeMs: stat.mtimeMs, size: stat.size };
-      const date = name.replace(/\.md$/i, '');
-      const marks = [];
-      STAMP_RE.lastIndex = 0;
-      let m;
-      while ((m = STAMP_RE.exec(raw))) marks.push({ time: m[1].trim(), start: m.index, bodyStart: STAMP_RE.lastIndex });
-      for (let i = 0; i < marks.length; i++) {
-        const end = i + 1 < marks.length ? marks[i + 1].start : raw.length;
-        const body = raw.slice(marks[i].bodyStart, end).trim();
-        if (!body) continue;
-        entries.push({ role, date, time: marks[i].time, text: body, file: rel });
+    const dirs = [path.join(root, role)];
+    if (options.includeArchive) dirs.push(path.join(root, role, 'archive'));
+    for (const dir of dirs) {
+      if (!existsSync(dir)) continue;
+      for (const name of readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md')) {
+        const file = path.join(dir, name);
+        let stat;
+        let raw;
+        try {
+          stat = statSync(file);
+          raw = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+        } catch {
+          continue;
+        }
+        const rel = path.relative(root, file).replace(/\\/g, '/');
+        files[rel] = { mtimeMs: stat.mtimeMs, size: stat.size };
+        const date = name.replace(/\.md$/i, '');
+        const marks = [];
+        STAMP_RE.lastIndex = 0;
+        let m;
+        while ((m = STAMP_RE.exec(raw))) marks.push({ time: m[1].trim(), start: m.index, bodyStart: STAMP_RE.lastIndex });
+        for (let i = 0; i < marks.length; i++) {
+          const end = i + 1 < marks.length ? marks[i + 1].start : raw.length;
+          const body = raw.slice(marks[i].bodyStart, end).trim();
+          if (!body) continue;
+          entries.push({ role, date, time: marks[i].time, text: body, file: rel });
+        }
       }
     }
   }
@@ -180,7 +183,7 @@ function writeIndex(file, index) {
 
 export async function getIndex(workspace, options = {}) {
   const file = options.index || defaultIndexPath(workspace);
-  const scanned = scanMemory(workspace);
+  const scanned = scanMemory(workspace, { includeArchive: options.includeArchive });
   const requestedProvider = options.provider || null;
   if (!options.rebuild) {
     try {
@@ -294,7 +297,7 @@ export async function searchMemory(workspace, options = {}) {
   let effectiveMode = mode;
 
   if (mode === 'word') {
-    candidates = scanMemory(workspace).entries;
+    candidates = scanMemory(workspace, { includeArchive: options.includeArchive }).entries;
   } else {
     let provider = options.provider || null;
     if (mode === 'semantic') {
@@ -475,6 +478,7 @@ const USAGE = [
   '  --rebuild                         强制重建（默认构建模式即重建）',
   '  --stats [--stale-days N]          输出索引统计与过期条目提示',
   '  --dry-run                         只统计不调用 embeddings、不写索引',
+  '  --include-archive                 索引包含 memory/<role>/archive/',
   '  --show-config                     输出脱敏后的 embeddings 配置',
   '  --json                            JSON 输出',
   '  -h, --help                        显示帮助',
@@ -490,6 +494,7 @@ function parseArgs(argv) {
     if (arg === '--stats') { opts.stats = true; continue; }
     if (arg === '--dry-run') { opts.dryRun = true; continue; }
     if (arg === '--show-config') { opts.showConfig = true; continue; }
+    if (arg === '--include-archive') { opts.includeArchive = true; continue; }
     if (arg.startsWith('--')) {
       let name = arg.slice(2);
       let value;
@@ -523,7 +528,7 @@ async function main() {
     return;
   }
   if (opts.dryRun) {
-    const scanned = scanMemory(opts.workspace);
+    const scanned = scanMemory(opts.workspace, { includeArchive: opts.includeArchive });
     const cfg = resolveEmbedConfig(opts);
     const provider = opts.provider || cfg.provider;
     const batches = provider === 'openai' ? Math.ceil(scanned.entries.length / Math.max(1, cfg.batchSize)) : 0;

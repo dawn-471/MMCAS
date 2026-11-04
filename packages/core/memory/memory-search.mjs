@@ -39,6 +39,7 @@ const USAGE = [
   '  --index <路径>                    自定义索引缓存路径',
   '  --rebuild                         强制重建索引',
   '  --stats [--stale-days N]          输出索引统计（无需查询词）',
+  '  --include-archive                 包含 memory/<role>/archive/',
   '  --json                            JSON 输出',
   '  -h, --help                        显示帮助',
 ].join('\n');
@@ -57,6 +58,7 @@ function parseArgs(argv) {
     if (arg === '--json') { opts.json = true; continue; }
     if (arg === '--rebuild') { opts.rebuild = true; continue; }
     if (arg === '--stats') { opts.stats = true; continue; }
+    if (arg === '--include-archive') { opts.includeArchive = true; continue; }
     if (arg.startsWith('--')) {
       let name = arg.slice(2);
       let value;

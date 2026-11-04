@@ -1,7 +1,7 @@
 # Roadmap
 
 > 本文件与 GitHub 的 [Milestones](https://github.com/dawn-471/MMCAS/milestones) / Issues 同步维护。
-> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　开发线：**v1.4（功能完成，待发布）→ v1.5（进行中，A2A MVP 已落地）**
+> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　开发线：**v1.4（功能完成，待发布）→ v1.5（进行中，A2A MVP）→ v1.6（进行中，Guide/Reviewer）**
 
 ## v1.3 · dsh 0.2.1 适配（已发布，2026-10-29 / tag `v1.3.0`）
 
@@ -58,18 +58,19 @@
 
 ### M3 · 并行项（可与 M1/M2 并行）
 
-- [ ] **面板 WebTTY**：先做 Windows PTY 技术 spike（`node-pty` 预编译或内置 pipes 半交互），再落地 Master 交互终端 + 命令审计 + 权限门；不可行时降级并在面板明示
-- [ ] **角色技能**：新增 2–3 个 skill（如敏感性分析、图表-数字溯源、复现清单），每项含模板、示例与验收
-- [ ] **审计维度**：新增 1–2 个维度（如假设检验、证据链、数值稳定性），扩 instructions 与面板选项
-- [ ] **记忆归档（可选）**：`memory-archive.mjs --before <date> --dry-run/--apply`，旧日文件移入 `archive/`；搜索默认排除、`--include-archive` 可选
+- [x] **半交互 WebTTY（MVP）**：Master 从面板打开持久 shell、输入命令、轮询输出、关闭；命令审计写 `terminal-audit.log`；Slave 403；6 项测试
+- [ ] **完整 PTY WebTTY**：Windows PTY spike（`node-pty` 预编译或等价方案），支持 TAB/Ctrl+C/全屏程序；不可行则保留半交互并在面板明示
+- [x] **角色技能**：新增 `mm-sensitivity-analysis`（建模手）、`mm-experiment-ledger`（编程手）、`mm-figure-number-traceability`（论文手）
+- [x] **审计维度收敛**：Reviewer 从三通用维度收敛为 model/code；Guide 增加 direction/model/code 三分支（替代泛化维度堆叠）
+- [x] **记忆归档**：`memory-archive.mjs --before <date>`（默认 dry-run，`--apply` 移动），旧日文件移入 `memory/<role>/archive/`；搜索默认排除、`--include-archive` 可选；10 项测试
 
 ### v1.5 验收标准
 
 - [x] **A2A（本地）**：loopback 双实例 ping/query/幂等/限流/错误 token 拒绝/降级全通过
 - [ ] **A2A（实机）**：同 tailnet 两端 ping/query < 2s；Slave→Master 19400 ACL 放行；三端演练
+- [x] **WebTTY（半交互 MVP）**：Master 终端 + 命令审计 + Slave 403；完整 PTY 待后续
 - [x] **面板**：通道状态可见、消息可发可收；离线/降级显式提示（含桌面端）
-- [ ] **WebTTY**：Master 可在面板执行交互式命令，命令审计落盘；Slave 不可入站
-- [ ] **技能/审计**：新增内容有模板、示例与测试；旧包兼容
+- [x] **技能/审计**：新增 3 个角色技能；Reviewer 收敛 model/code，Guide 增加 direction/model/code；旧包兼容
 - [x] **回归（本地）**：A2A + notices + poller + memory + audit 全绿
 - [ ] **回归（发行）**：三端重打包与实机演练通过
 - [x] **文档**：design §17 / ROADMAP / secrets-registry / README / core README 同步
@@ -82,6 +83,21 @@
 - 消息风暴/重放：幂等键 + TTL + 速率限制 + token；当前 token 为团队共享，轮换/吊销列入 M2
 - 桌面端：A2A 运行在面板宿主内，使用同一 token 文件与 19400 端口，与面板数据端 19398 分离
 - **不在 v1.5 范围**：跨 tailnet 联邦、公网中继、完整 RBAC、独立中心服务
+
+## v1.6 · 专家双角色 Guide / Reviewer（进行中，2026-11-04）
+
+> 参考 `deepseek-ai/dsh-superagent-prototype`（MIT，研究原型）的“少占用人类注意力”原则：只在被请求时运行、一次请求一个工作项、报告即交付、面板只显示需要人处理的事。
+
+- [x] **角色包**：`packages/guide/`（方向/模型/实现路线提示词 + 配置模板）与 `packages/reviewer/`（模型/代码审核提示词 + 配置模板）；B-Audit 审计提示词迁入 Reviewer
+- [x] **共享运行器**：`audit-run.mjs --mode reviewer|guide`；双层配置 `reviewer.json` / `guide.json`；报告分别落 `audit/` / `guidance/`
+- [x] **Guide**：Master 显式发起；维度 `direction|model|code`；输出方向判断、关键路径、2–3 条候选路线、分工与收益/代价排序；不写代码/论文
+- [x] **Reviewer 收敛**：只审数学模型/代码漏洞；面板移除 paper 维度（CLI 保留兼容）；A/B/C 分级与证据引用
+- [x] **面板**：新增「指导室」（仅 Master），「审阅室」更名「审核室」并收敛为 model/code；两室均支持配置、状态、预算确认、报告与通知
+- [x] **配置/预算**：默认本地桥 3220；Guide 阈值 ¥50，Reviewer ¥30；key 存 `.credentials.yaml`，不回显；材料脱敏与字符上限沿用 v1.2
+- [x] **测试**：Guide 9 项（配置/dry-run/全链/维度校验）+ 面板 Guide 全链 7 项；Reviewer 16 项回归通过
+- [ ] **工作项持久化**：跨重启恢复/重试队列/历史列表（对齐 superagent 的 Ticket/Assignment/Report）
+- [ ] **Guide→任务卡联动**：把指导建议转为候选任务卡（需人类确认，不自动改卡）
+- [ ] **实机专家调用**：三端网络/桥/专家模型费用标定
 
 ## v1.2 · 实战修订（已完成，2026-09-16 发布）
 
@@ -102,8 +118,9 @@
 
 ## English
 
-- Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (in progress; A2A MVP shipped locally).
+- Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (in progress; A2A MVP) → **v1.6** (in progress; Guide/Reviewer).
 - **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, team-token auth, idempotency/TTL/rate limits/state persistence, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config`), panel status/send, desktop-compatible; 44 A2A tests (core 18 / adapter 10 / panel 9 / CLI 7). Remaining: per-role token rotation, reconnect/heartbeat/backpressure, real three-end Tailscale drill + Slave→Master 19400 ACL, WebTTY, role skills/audit dimensions, optional memory archive.
+- **v1.6 (in progress; Guide / Reviewer)**: two expert roles integrated from the former external B-Audit flow — **Guide** (Master-only; stronger model; direction / model / implementation routes; `direction|model|code`) and **Reviewer** (model/code only; A/B/C findings with evidence; paper hidden). Shared runner `audit-run.mjs --mode reviewer|guide`, configs `reviewer.json`/`guide.json`, reports `audit/`/`guidance/`, panel rooms, budget guards, superagent-inspired explicit-request / one-work-item / report-only discipline; guide 9 + panel 7 tests and reviewer 16 regressions.
 - **v1.4 (feature-complete)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; 87-test regression.
 - **v1.3 (shipped)**: full dsh 0.2.1 support for CLI and Desktop; merge-based profile configuration; one-click Desktop onboarding (`MMCAS-Desktop`, isolated `DSH_HOME`, panel 19398); standard preset sync (`time-context` / `tool-schedule`); reviewer config migration to `reviewer.json` with legacy `settings.yaml` / `.imported` compatibility; cold-session injection, target-session activity, audit report naming, credentials refs, and localized New Session fixes; full regression.
 - **v1.2 (shipped)**: scheduler core hardening (auto-claim poller into the mainline, fix duplicate/stale dispatch, remove the hard WIP cap, regression tests); sessions & context (enable built-in compaction, per-task session lifecycle, context waterline warnings); cross-end messaging & governance (notices, stop commands, return cards, rework flow); independent audit instance (one-click third-party audits via a local bridge); sync infra (v0.2.1 rollout, migration self-check, watchdog); packaging & defaults.
