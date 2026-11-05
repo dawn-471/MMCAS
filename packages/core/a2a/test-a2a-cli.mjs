@@ -104,6 +104,20 @@ console.log('\n[AC2] CLI 回落 notices');
   check('AC2 回落内容完整', /kind: stop/.test(text) && /urgency: urgent/.test(text) && /scope: T-301/.test(text) && /A2A/.test(text));
 }
 
+console.log('\n[AC3] token 轮换 / 吊销');
+{
+  const tokensFile = path.join(ROOT, 'a2a-tokens.json');
+  const rotated = await run(['tokens', 'rotate', 'coder', '--tokens-file', tokensFile, '--json']);
+  check('AC3 rotate 成功', rotated.code === 0 && rotated.json && rotated.json.action === 'rotate' && rotated.json.role === 'coder', rotated.err || JSON.stringify(rotated.json));
+  const map = JSON.parse(readFileSync(tokensFile, 'utf8'));
+  check('AC3 token 已写入', typeof map.coder === 'string' && map.coder.length > 10);
+  const listed = await run(['tokens', 'list', '--tokens-file', tokensFile, '--json']);
+  check('AC3 list 脱敏', listed.code === 0 && listed.json && listed.json.masked.coder && !listed.out.includes(map.coder), listed.out.slice(0, 120));
+  const revoked = await run(['tokens', 'revoke', 'coder', '--tokens-file', tokensFile, '--json']);
+  check('AC3 revoke 成功', revoked.code === 0 && revoked.json && revoked.json.action === 'revoke', revoked.err || JSON.stringify(revoked.json));
+  check('AC3 token 已删除', !JSON.parse(readFileSync(tokensFile, 'utf8')).coder);
+}
+
 await modeler.stop();
 await coder.stop();
 rmSync(ROOT, { recursive: true, force: true });

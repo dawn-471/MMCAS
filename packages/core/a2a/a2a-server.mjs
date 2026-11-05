@@ -144,6 +144,7 @@ export function createA2AServer(options = {}) {
       }
       if (rateLimited(ip)) {
         state.rejected++;
+        res.setHeader('Retry-After', '60');
         return sendJson(res, 429, { ok: false, error: 'A2A 速率超限' });
       }
       state.received++;
@@ -166,6 +167,7 @@ export function createA2AServer(options = {}) {
       }
       if (rateLimited(ip)) {
         state.rejected++;
+        res.setHeader('Retry-After', '60');
         return sendJson(res, 429, { ok: false, error: 'A2A 速率超限' });
       }
       const declaredLength = Number(req.headers['content-length'] || 0);

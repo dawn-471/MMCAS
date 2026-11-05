@@ -44,6 +44,7 @@ node a2a/a2a.mjs send modeler --body "请确认模型假设" --kind query
 node a2a/a2a.mjs ping coder
 node a2a/a2a.mjs status --json
 node a2a/a2a.mjs peers
+node a2a/a2a.mjs tokens list|rotate|revoke <role>
 ```
 
 - 默认端口 19400，token 读取 `MMCAS_A2A_TOKEN` 或 `<MMCAS_HOME>/a2a-token.txt`；token 由 `pack.mjs` 生成、`setup.bat` 下发。

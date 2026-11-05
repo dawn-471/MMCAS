@@ -6,6 +6,10 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function backoffMs(attempt) {
+  return Math.min(200 * (2 ** attempt), 2000);
+}
+
 export function peerBaseUrl(peer, port = 19400) {
   const raw = typeof peer === 'string' ? peer : (peer && peer.ip);
   if (!raw) throw new Error('peer 缺少 IP');
@@ -79,7 +83,7 @@ async function sendOne(input, ctx) {
     } catch (err) {
       last = { ok: false, status: 0, error: err.message, peer, id: message.id };
     }
-    if (attempt < retries) await delay(200);
+    if (attempt < retries) await delay(backoffMs(attempt));
   }
   return last || { ok: false, status: 0, error: '发送失败', peer, id: message.id };
 }
@@ -127,7 +131,7 @@ export async function pingPeer(to, ctx = {}) {
     } catch (err) {
       last = { ok: false, status: 0, error: err.message, peer };
     }
-    if (attempt < retries) await delay(200);
+    if (attempt < retries) await delay(backoffMs(attempt));
   }
   return last || { ok: false, status: 0, error: 'ping 失败', peer };
 }

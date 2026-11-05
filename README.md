@@ -23,8 +23,8 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 
 ## 最新更新（v1.6 专家双角色进行中 / v1.5 A2A MVP / v1.4 功能完成）
 
-- **v1.6 专家双角色**：**Guide（指导者）**仅 Master 发起，用更强专家模型判断方向、关键路径与攻坚路线（direction / model / code）；**Reviewer（审核者）**只审数学模型与代码漏洞（model / code，A/B/C 分级 + 证据）。共享运行器、独立 `guide.json` / `reviewer.json`、审核室 / 指导室、预算守门；参考 `dsh-superagent-prototype` 的“只在被请求时运行、报告即交付”。
-- **v1.5 A2A 直连 MVP**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决），HTTP 19400 + 每角色 token + 幂等/TTL/限流；离线或失败自动回落 `notices/`；`a2a.mjs send/ping/status/peers/config` + 面板总控状态/发送；桌面端沿用同一面板宿主与 token，端口与 19398 分离。
+- **v1.6 专家双角色**：**Guide（指导者）**仅 Master 发起，用更强专家模型判断方向、关键路径与攻坚路线（direction / model / code）；**Reviewer（审核者）**只审数学模型与代码漏洞（model / code，A/B/C 分级 + 证据）。共享运行器、独立 `guide.json` / `reviewer.json`、审核室 / 指导室、工作项持久化、报告转候选卡、预算守门；参考 `dsh-superagent-prototype` 的“只在被请求时运行、报告即交付”。
+- **v1.5 A2A 直连 MVP**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决），HTTP 19400 + 每角色 token（可轮换/吊销）+ 幂等/TTL/限流；离线或失败自动回落 `notices/`；`a2a.mjs send/ping/status/peers/config` + 面板总控状态/发送；桌面端沿用同一面板宿主与 token，端口与 19398 分离。
 - **v1.4 记忆向量检索**：零依赖本地索引（中文 bigram + 英文/数字词元 TF-IDF + 余弦）＋可选语义嵌入（OpenAI 兼容 `/embeddings`）＋可选 sqlite-vec KNN；`memory-search` 支持 `word|vector|hybrid|semantic`，默认混合，语义失败自动回退。
 - **v1.4 面板搜索**：共享记忆抽屉新增搜索框、模式/角色筛选、分数与降级提示；`GET /api/memory/search` 三端一致，索引缓存于 `MMCAS_HOME`、不随 git 同步。
 - **v1.4 运维**：`--stats --stale-days N` 过期条目提示；`download-vendor.sh` 拉取 sqlite-vec，`pack.mjs` / `audit-recheck.sh` 已接线；87 项记忆相关回归。

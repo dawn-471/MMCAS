@@ -29,12 +29,13 @@
 import { createServer } from 'node:http';
 import { readdirSync, readFileSync, writeFileSync, appendFileSync, unlinkSync, existsSync, statSync, mkdirSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { handleMemorySearch } from './memory-api.mjs';
 import { loadA2ACore } from './a2a-core.mjs';
+import { createExpertStore } from './expert-state.mjs';
 
 export const name = 'mmcas-dsh-panel';
 export const inject = ['clientModules', 'sessions', 'agents', 'sessionController', 'tokenMeter'];
@@ -60,6 +61,8 @@ export function apply(ctx, config = {}) {
   const terminal = {
     proc: null, seq: 0, chunks: [], running: false, startedAt: null, shell: '', cwd: ws, lastError: null,
   };
+  const expertStore = createExpertStore(path.join(local, 'experts-state.json'));
+  expertStore.recoverInterrupted();
 
   // ---------- git 同步（看板刷新的数据来源：coder/writer 端的卡变更经远端仓进来） ----------
   const syncCfg = {
@@ -748,6 +751,30 @@ export function apply(ctx, config = {}) {
     } catch { return {}; }
   }
 
+  function writeA2ATokens(tokens) {
+    mkdirSync(local, { recursive: true });
+    writeFileSync(path.join(local, 'a2a-tokens.json'), JSON.stringify(tokens, null, 2) + '\n');
+  }
+
+  function maskedA2ATokens(tokens) {
+    const out = {};
+    for (const [tokenRole, value] of Object.entries(tokens)) {
+      out[tokenRole] = value.length > 8 ? value.slice(0, 4) + '…' + value.slice(-4) : '…';
+    }
+    return out;
+  }
+
+  async function restartA2A() {
+    if (a2aTimer) { clearInterval(a2aTimer); a2aTimer = null; }
+    if (a2aServer) {
+      try { await a2aServer.stop(); } catch {}
+      a2aServer = null;
+    }
+    a2aState.running = false;
+    a2aState.enabled = false;
+    await startA2A();
+  }
+
   function a2aToken() {
     if (a2aCfg.token) return String(a2aCfg.token).trim();
     if (process.env.MMCAS_A2A_TOKEN) return String(process.env.MMCAS_A2A_TOKEN).trim();
@@ -1057,8 +1084,8 @@ export function apply(ctx, config = {}) {
     } catch {}
     return null;
   }
-  const auditState = { running: false, id: '', dimension: '', startedAt: '', result: null };
-  const guideState = { running: false, id: '', dimension: '', startedAt: '', result: null };
+  const auditState = { running: false, id: '', jobId: '', dimension: '', startedAt: '', result: null };
+  const guideState = { running: false, id: '', jobId: '', dimension: '', startedAt: '', result: null };
   // ---- v1.2.x：Reviewer 配置（MMCAS 自有 reviewer.json；dsh 0.2.x 的 settings.yaml 只做只读迁移） ----
   let reviewerCfgCache = { at: 0, data: null };
   let guideCfgCache = { at: 0, data: null };
@@ -1524,6 +1551,41 @@ export function apply(ctx, config = {}) {
       await refreshA2APeers();
       return json(res, 200, { ok: true, ...a2aSnapshot() });
     }
+    if (p === '/api/a2a/tokens' && req.method === 'GET') {
+      if (role !== 'modeler') return json(res, 403, { ok: false, error: '仅 Master 可管理 A2A token' });
+      const tokens = a2aTokens();
+      return json(res, 200, { ok: true, roles: Object.keys(tokens), masked: maskedA2ATokens(tokens), path: path.join(local, 'a2a-tokens.json') });
+    }
+    if (p === '/api/a2a/tokens/rotate' && req.method === 'POST') {
+      if (role !== 'modeler') return json(res, 403, { ok: false, error: '仅 Master 可轮换 A2A token' });
+      const b = await readBody(req);
+      const tokenRole = String(b.role || '');
+      if (!VALID_ROLES.includes(tokenRole)) return json(res, 400, { ok: false, error: '非法 role: ' + tokenRole });
+      const tokens = a2aTokens();
+      tokens[tokenRole] = randomBytes(24).toString('base64url');
+      writeA2ATokens(tokens);
+      await restartA2A();
+      return json(res, 200, {
+        ok: true, action: 'rotate', role: tokenRole, path: path.join(local, 'a2a-tokens.json'),
+        roles: Object.keys(tokens), restartRequired: true,
+        note: '已重启本端 A2A；其他端需同步新的 a2a-tokens.json 后才能互发',
+      });
+    }
+    if (p === '/api/a2a/tokens/revoke' && req.method === 'POST') {
+      if (role !== 'modeler') return json(res, 403, { ok: false, error: '仅 Master 可吊销 A2A token' });
+      const b = await readBody(req);
+      const tokenRole = String(b.role || '');
+      if (!VALID_ROLES.includes(tokenRole)) return json(res, 400, { ok: false, error: '非法 role: ' + tokenRole });
+      const tokens = a2aTokens();
+      delete tokens[tokenRole];
+      writeA2ATokens(tokens);
+      await restartA2A();
+      return json(res, 200, {
+        ok: true, action: 'revoke', role: tokenRole, path: path.join(local, 'a2a-tokens.json'),
+        roles: Object.keys(tokens), restartRequired: true,
+        note: '已吊销并重启本端 A2A；其他端需同步新的 a2a-tokens.json',
+      });
+    }
     if (p === '/api/a2a/send' && req.method === 'POST') {
       const b = await readBody(req);
       if (b.__badEncoding) return json(res, 400, { ok: false, error: '请求内容编码损坏（非 UTF-8），已拒绝' });
@@ -1645,10 +1707,13 @@ export function apply(ctx, config = {}) {
       auditState.dimension = dim;
       auditState.startedAt = new Date().toISOString();
       auditState.result = null;
+      const job = expertStore.start({ mode: 'reviewer', dimension: dim, requester: role, model: b.model || '' });
+      auditState.jobId = job.id;
       const aid = auditState.id;
       runAuditCli(dim, { confirm: !!b.confirm, model: b.model, note: b.note }).then((r) => {
         auditState.running = false;
-        auditState.result = r;
+        expertStore.finish(job.id, r);
+        auditState.result = { ...r, jobId: job.id };
         if (r && r.ok && r.reportPath) {
           // 通知（T3.1 联动）：审计报告就绪 → notices 一条给 modeler
           try {
@@ -1660,14 +1725,14 @@ export function apply(ctx, config = {}) {
             const rec = { id: nid, from: role, to: 'modeler', kind: 'info', urgency: 'normal', scope: '', status: 'pending', at: now.toISOString() };
             const text = '---\n' + Object.entries(rec).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n## 正文\nReviewer 审核（' + dim + '）完成：报告 ' + r.reportPath + '（耗时 ' + r.elapsedS + 's，估算 ¥' + r.estFee + '）\n';
             writeFileSync(path.join(dir, nid + '.md'), text);
-            auditState.result = { ...r, notice: nid };
+            auditState.result = { ...r, jobId: job.id, notice: nid };
           } catch {}
         }
       });
       return json(res, 200, { ok: true, started: true, id: aid, dimension: dim });
     }
     if (p === '/api/audit/status' && req.method === 'GET') {
-      return json(res, 200, { ...auditState });
+      return json(res, 200, { ...auditState, history: expertStore.list('reviewer', 10) });
     }
 
     // ---- v1.6：Guide（指导者）----
@@ -1689,10 +1754,13 @@ export function apply(ctx, config = {}) {
       guideState.dimension = dim;
       guideState.startedAt = new Date().toISOString();
       guideState.result = null;
+      const job = expertStore.start({ mode: 'guide', dimension: dim, requester: role, model: b.model || '' });
+      guideState.jobId = job.id;
       const gid = guideState.id;
       runGuideCli(dim, { confirm: !!b.confirm, model: b.model, note: b.note }).then((r) => {
         guideState.running = false;
-        guideState.result = r;
+        expertStore.finish(job.id, r);
+        guideState.result = { ...r, jobId: job.id };
         if (r && r.ok && r.reportPath) {
           try {
             const rec = createNotice({
@@ -1702,14 +1770,14 @@ export function apply(ctx, config = {}) {
               scope: '',
               body: 'Guide 指导（' + dim + '）完成：报告 ' + r.reportPath + '（耗时 ' + r.elapsedS + 's，估算 ¥' + r.estFee + '）',
             });
-            guideState.result = { ...r, notice: rec.id };
+            guideState.result = { ...r, jobId: job.id, notice: rec.id };
           } catch {}
         }
       });
       return json(res, 200, { ok: true, started: true, id: gid, dimension: dim });
     }
     if (p === '/api/guide/status' && req.method === 'GET') {
-      return json(res, 200, { ...guideState });
+      return json(res, 200, { ...guideState, history: expertStore.list('guide', 10) });
     }
 
     // ---- v1.2 T5.4：桥健康代理（面板展示上游额度/鉴权状态） ----

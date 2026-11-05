@@ -11,7 +11,7 @@
 | 4 | SSH 私钥（Master → 成员远程控制） | 部署机 `~/.ssh/`，安装期生成 | 否 | 公钥分发，私钥不离开 Master | 成员退役后清理成员机 `authorized_keys` |
 | 5 | 网盘 / 共享盘凭证 | 由对应工具独立管理（OAuth 等） | 否 | 与 MMCAS 代码无关 | 按各服务自身流程吊销 |
 | 6 | 语义检索 embeddings API key（可选） | `<MMCAS_HOME>/memory-embed.json` 的 `apiKeyEnv` 指向的环境变量，或 dsh `.credentials.yaml` 的 `refs` | 否 | 可复用现有 provider key，也可独立一把；默认 `provider=hash` 时不需要 | 不启用语义检索即无需；吊销/缺失时自动回退 hybrid |
-| 7 | A2A token（v1.5，每角色） | 包内 `pkg/secrets/a2a-tokens.json` → 成员机 `<MMCAS_HOME>/a2a-tokens.json`；单 token 回退 `a2a-token.txt` / `MMCAS_A2A_TOKEN` | 否 | 每角色一把（服务端校验 token→from 角色），由 `pack.mjs` 生成；成员机需全量映射才能互发 | 轮换后重打包/重跑 setup；缺失时 A2A 关闭，notices 仍可用 |
+| 7 | A2A token（v1.5，每角色） | 包内 `pkg/secrets/a2a-tokens.json` → 成员机 `<MMCAS_HOME>/a2a-tokens.json`；单 token 回退 `a2a-token.txt` / `MMCAS_A2A_TOKEN` | 否 | 每角色一把（服务端校验 token→from 角色），由 `pack.mjs` 生成；成员机需全量映射才能互发 | CLI `a2a.mjs tokens rotate/revoke` 或面板按钮轮换/吊销；其他端需同步映射；缺失时 A2A 关闭，notices 仍可用 |
 | 8 | 专家角色 API key（Guide / Reviewer，v1.6） | `<MMCAS_HOME>/guide.json` / `reviewer.json` 的 `apiKeyEnv` 指向的环境变量，或 dsh `.credentials.yaml` 的 `refs` | 否 | 可复用现有 provider key，也可各配一把；Guide 建议用更强专家模型 | 不启用对应角色即无需；吊销/缺失时明确报错，不静默 |
 
 ## 凭证生命周期纪律

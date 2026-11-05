@@ -134,6 +134,19 @@ if (ready) {
   check('AP5 回落文件落盘', existsSync(noticesDir) && readdirSync(noticesDir).some((f) => f.startsWith(fallback.id)), fallback.id);
   const noticeText = readFileSync(path.join(noticesDir, fallback.id + '.md'), 'utf8');
   check('AP5 回落保留 urgent/stop/scope', /kind: stop/.test(noticeText) && /urgency: urgent/.test(noticeText) && /scope: T-201/.test(noticeText));
+
+  const tokenList = await (await fetch('http://127.0.0.1:' + panelPort + '/api/a2a/tokens')).json();
+  check('AP6 token 列表可读', tokenList.ok && Array.isArray(tokenList.roles), JSON.stringify(tokenList).slice(0, 120));
+  const rotated = await (await fetch('http://127.0.0.1:' + panelPort + '/api/a2a/tokens/rotate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'coder' }),
+  })).json();
+  check('AP6 token 轮换成功', rotated.ok && rotated.action === 'rotate' && rotated.role === 'coder', JSON.stringify(rotated));
+  const tokenMap = JSON.parse(readFileSync(path.join(LOCAL, 'a2a-tokens.json'), 'utf8'));
+  check('AP6 token 已落盘', typeof tokenMap.coder === 'string' && tokenMap.coder.length > 10);
+  const restarted = await (await fetch('http://127.0.0.1:' + panelPort + '/api/a2a/status')).json();
+  check('AP6 轮换后 A2A 已重启', restarted.ok && restarted.running, JSON.stringify(restarted).slice(0, 120));
 } else {
   fail += 1;
 }

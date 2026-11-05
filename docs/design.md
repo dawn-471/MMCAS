@@ -276,7 +276,7 @@ default: deepseek
 - **投递**：面板宿主内 A2A 服务收到消息后复用 `injectToSession`（urgent/stop=steer，其余 queue）；失败/离线自动回落 `notices/`。
 - **入口**：`a2a.mjs send/ping/status/peers/config`；面板总控 A2A 状态 + 消息发送（优先 A2A，失败回落）。
 - **桌面端**：A2A 随面板宿主启动，token 路径与端口一致；面板数据端仍为 19398，A2A 19400。
-- **回归**：48 项 A2A 测试（核心 22 / 适配 10 / 面板 9 / CLI 7）；实机 tailnet 演练与 token 轮换/吊销入口待 M2。
+- **回归**：57 项 A2A 测试（核心 22 / 适配 10 / 面板 13 / CLI 12）；实机 tailnet 演练与 token 轮换/吊销入口待 M2。
 
 ### v1.6 专家双角色 Guide / Reviewer（已落地，2026-11-04）
 
@@ -480,7 +480,7 @@ node memory-index.mjs --workspace <ws> --stats [--stale-days N] [--json]
 ### 17.4 鉴权与安全
 
 - Tailscale ACL 负责网络层；应用层要求 `Authorization: Bearer <token>`，常量时间比较。
-- 每角色 token：`pack.mjs` 生成/复用 `<MMCAS_HOME>/a2a-tokens.json`（role→token），随包 `secrets/a2a-tokens.json`，`setup.bat` 复制到成员机；服务端按 token 识别发送方角色，并校验 `from` 一致；单 token 文件/`MMCAS_A2A_TOKEN` 作为回退。三端包须复用同一映射。
+- 每角色 token：`pack.mjs` 生成/复用 `<MMCAS_HOME>/a2a-tokens.json`（role→token），随包 `secrets/a2a-tokens.json`，`setup.bat` 复制到成员机；服务端按 token 识别发送方角色，并校验 `from` 一致；单 token 文件/`MMCAS_A2A_TOKEN` 作为回退。三端包须复用同一映射。CLI `a2a.mjs tokens list|rotate|revoke` 与面板总控按钮可轮换/吊销，轮换后自动重启本端 A2A；其他端需同步映射。
 - IP→role 校验：服务端按发现结果拒绝 `from` 与来源 IP 不匹配的消息；未知 peer 不投递。
 - 速率限制：默认 120 条/分钟/IP；超出 429。日志不打印 token。
 - 防火墙：`enable-a2a.ps1` 创建入站规则，仅允许 `100.64.0.0/10` 访问 TCP 19400；Tailscale ACL 还需放行 Slave→Master 19400。
@@ -515,8 +515,8 @@ node a2a.mjs config
 
 ### 17.8 当前状态与后续
 
-- 已落地：协议/发现/服务端/客户端/CLI、面板状态与发送、通知回落、桌面端、打包/token/防火墙、48 项测试。
-- 待办（M2/M3）：token 轮换/吊销入口、重连/背压/离线队列、实机 tailnet 三端演练；完整 PTY WebTTY 见 §19；记忆归档与半交互终端已落地；角色技能/审计维度收敛见 §18。
+- 已落地：协议/发现/服务端/客户端/CLI、面板状态与发送、通知回落、桌面端、打包/token/防火墙、57 项测试。
+- 待办（M2/M3）：背压/消息分片/队列上限、实机 tailnet 三端演练；完整 PTY WebTTY 见 §19；记忆归档与半交互终端已落地；角色技能/审计维度收敛见 §18。
 
 ## 18. 专家双角色：Guide / Reviewer（v1.6）
 
@@ -552,7 +552,7 @@ node a2a.mjs config
 
 - Master 侧按钮：**审核室**（全员可见）与**指导室**（仅 Master，控制专家模型成本）。
 - 审核室：model/code 两个维度；配置 `reviewer.json`；报告 `audit/`。
-- 指导室：direction/model/code；配置 `guide.json`；报告 `guidance/`；显示预算阈值、桥健康、运行状态与最近结果。
+- 指导室：direction/model/code；配置 `guide.json`；报告 `guidance/`；显示预算阈值、桥健康、运行状态、最近结果与历史；完成后可一键「转候选任务卡」（todo，需 Master 确认/复核，不自动执行）。
 - API：`POST /api/audit`、`GET /api/audit/status`、`GET|PUT /api/audit/config`；`POST /api/guide`、`GET /api/guide/status`、`GET|PUT /api/guide/config`。
 - 完成时向 modeler 写一条 notices 通知；不自动创建任务卡。
 
@@ -566,8 +566,8 @@ node a2a.mjs config
 
 ### 18.6 当前状态
 
-- 已落地：Guide/Reviewer 角色包、共享运行器、双层配置、面板两室、B-Audit 提示词迁入、Guide 三分支提示词、预算/脱敏/报告、Guide 9 + 面板 7 项测试。
-- 待办：专家工作项持久化（跨重启恢复/重试）、Guide 与任务卡联动（建议转卡）、实机专家模型调用与费用标定。
+- 已落地：Guide/Reviewer 角色包、共享运行器、双层配置、面板两室、B-Audit 提示词迁入、Guide 三分支提示词、预算/脱敏/报告、工作项持久化（`experts-state.json` + 历史 + 重启中断标记）、Guide→候选任务卡、Guide 9 + 面板 7 + expert-state 8 项测试。
+- 待办：实机专家模型调用与费用标定；工作项重试队列（当前失败需重新发起）。
 
 ## 19. 半交互 WebTTY（v1.5 M3 MVP）
 

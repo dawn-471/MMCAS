@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,6 +15,7 @@ const USAGE = [
   '  node a2a.mjs status [--json]',
   '  node a2a.mjs peers [--json]',
   '  node a2a.mjs config [--json]',
+  '  node a2a.mjs tokens list|rotate <role>|revoke <role> [--json]',
   '',
   '选项:',
   '  --kind ruling|error|stop|info|query|reply|task-handoff',
@@ -165,6 +167,46 @@ async function main() {
   if (command === 'config') {
     emit(publicConfig(cfg), json);
     return;
+  }
+
+  if (command === 'tokens') {
+    const sub = process.argv[3];
+    const role = process.argv[4];
+    const writeTokens = () => {
+      mkdirSync(path.dirname(cfg.tokensFile), { recursive: true });
+      writeFileSync(cfg.tokensFile, JSON.stringify(cfg.tokens, null, 2) + '\n');
+    };
+    const masked = {};
+    for (const [tokenRole, value] of Object.entries(cfg.tokens)) {
+      masked[tokenRole] = value.length > 8 ? value.slice(0, 4) + '…' + value.slice(-4) : '…';
+    }
+    if (!sub || sub === 'list') {
+      const value = { ok: true, path: cfg.tokensFile, roles: Object.keys(cfg.tokens), masked };
+      if (json) emit(value, true);
+      else {
+        console.log('tokens: ' + cfg.tokensFile);
+        for (const tokenRole of Object.keys(cfg.tokens)) console.log('  ' + tokenRole.padEnd(8) + masked[tokenRole]);
+      }
+      return;
+    }
+    if (!ROLES.includes(role)) {
+      console.error('需要角色: modeler|coder|writer');
+      process.exit(2);
+    }
+    if (sub === 'rotate') {
+      cfg.tokens[role] = randomBytes(24).toString('base64url');
+      writeTokens();
+      emit({ ok: true, action: 'rotate', role, path: cfg.tokensFile, tokenRoles: Object.keys(cfg.tokens) }, json);
+      return;
+    }
+    if (sub === 'revoke') {
+      delete cfg.tokens[role];
+      writeTokens();
+      emit({ ok: true, action: 'revoke', role, path: cfg.tokensFile, tokenRoles: Object.keys(cfg.tokens) }, json);
+      return;
+    }
+    console.error('tokens 子命令: list|rotate|revoke');
+    process.exit(2);
   }
 
   let peers = cfg.peers;

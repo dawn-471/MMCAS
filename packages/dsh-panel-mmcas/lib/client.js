@@ -245,6 +245,8 @@ window.__ModuleLoader__.load({
       var _ntf = useState({ to: "coder", kind: "info", urgency: "normal", scope: "", body: "", preferA2A: true }), nForm = _ntf[0], setNForm = _ntf[1];
       var _ntb = useState(false), ntBusy = _ntb[0], setNtBusy = _ntb[1];
       var _ntm = useState(""), ntMsg = _ntm[0], setNtMsg = _ntm[1];
+      var _tr = useState("coder"), tokRole = _tr[0], setTokRole = _tr[1];
+      var _tm = useState(""), tokMsg = _tm[0], setTokMsg = _tm[1];
       function loadNotices() {
         fetch(API + "/api/notices").then(function (r) { return r.json(); }).then(function (s) { setNotices((s && s.items) || []); }).catch(function () {});
       }
@@ -273,6 +275,18 @@ window.__ModuleLoader__.load({
       var myRoleN = (state && state.role) || "coder";
       var noticeTargets = myRoleN === "modeler" ? ["coder", "writer", "modeler", "all"] : ["modeler"];
       var inboxList = (notices || []).filter(function (n) { return n.to === myRoleN || n.to === "all" || n.from === myRoleN; }).slice(0, 12);
+      function rotateToken() {
+        if (!window.confirm("轮换 " + tokRole + " 的 A2A token？其他端需同步新的 a2a-tokens.json 后才能互发。")) return;
+        apiCall("POST", "/api/a2a/tokens/rotate", { role: tokRole }).then(function (r) {
+          setTokMsg(r && r.ok ? ("已轮换 " + r.role + "（本端已重启 A2A；其他端需同步 token 文件）") : ((r && r.error) || "轮换失败"));
+        }).catch(function (e) { setTokMsg(String(e)); });
+      }
+      function revokeToken() {
+        if (!window.confirm("吊销 " + tokRole + " 的 A2A token？该端将无法再通过 A2A 发送。")) return;
+        apiCall("POST", "/api/a2a/tokens/revoke", { role: tokRole }).then(function (r) {
+          setTokMsg(r && r.ok ? ("已吊销 " + r.role + "（本端已重启 A2A）") : ((r && r.error) || "吊销失败"));
+        }).catch(function (e) { setTokMsg(String(e)); });
+      }
       var a2a = state && state.a2a;
       var a2aRtt = a2a && a2a.peers ? Object.keys(a2a.peers).map(function (k) { return a2a.peers[k] && a2a.peers[k].latencyMs; }).filter(function (v) { return typeof v === "number"; }) : [];
       var a2aAvgRtt = a2aRtt.length ? Math.round(a2aRtt.reduce(function (a, b) { return a + b; }, 0) / a2aRtt.length) : null;
@@ -287,6 +301,14 @@ window.__ModuleLoader__.load({
         el("div", { className: "mmcas-row" },
           a2aLine,
           el("button", { className: "mmcas-btn-ghost", onClick: function () { apiCall("POST", "/api/a2a/refresh", {}).then(function () { loadNotices(); }); } }, "刷新 A2A")),
+        (state && state.role) === "modeler" ? el("div", { className: "mmcas-row" },
+          el("select", { className: "mmcas-select", style: { width: "100px", flex: "none" }, value: tokRole, onChange: function (e) { setTokRole(e.target.value); } },
+            el("option", { value: "coder" }, "coder"),
+            el("option", { value: "writer" }, "writer"),
+            el("option", { value: "modeler" }, "modeler")),
+          el("button", { className: "mmcas-btn-ghost", onClick: rotateToken }, "轮换 token"),
+          el("button", { className: "mmcas-btn-danger", onClick: revokeToken }, "吊销 token")) : null,
+        tokMsg ? el("div", { className: "mmcas-empty" }, tokMsg) : null,
         el("div", { className: "mmcas-row" },
           el("select", { className: "mmcas-select", style: { width: "96px", flex: "none" }, value: nForm.to, onChange: function (e) { setNForm({ ...nForm, to: e.target.value }); } },
             noticeTargets.map(function (x) { return el("option", { value: x, key: x }, x); })),
@@ -708,6 +730,13 @@ window.__ModuleLoader__.load({
                 ? (" · ⚠ 最近上游错误 " + (bh.bridge.lastUpstreamError.status || "?") + "（" + String(bh.bridge.lastUpstreamError.at || "").slice(0, 19) + "）")
                 : (bh.bridge.lastSuccessAt ? (" · 最近成功 " + String(bh.bridge.lastSuccessAt).slice(0, 19)) : " · 尚无调用记录")))
             : ("桥：✗ " + (bh.error || "不可达") + "（默认通道将失败；检查 3220 或改配置走外部端点）")) : null,
+        st && st.history && st.history.length ? el("div", { className: "mmcas-sec" }, "最近审核") : null,
+        st && st.history && st.history.length ? st.history.slice(0, 5).map(function (h) {
+          return el("div", { className: "mmcas-empty", key: h.id },
+            "[" + h.status + "] " + h.dimension + " · " + String(h.startedAt || "").slice(0, 19) +
+            (h.reportPath ? " · " + String(h.reportPath).split(/[\\/]/).pop() : "") +
+            (h.error ? " · " + h.error : ""));
+        }) : null,
         el("div", { className: "mmcas-empty" }, "报告落盘于工作区 audit/ 目录。审核仅覆盖模型与代码漏洞，不评写作/排版。")
       );
     }
@@ -751,6 +780,21 @@ window.__ModuleLoader__.load({
       }
       var running = st && st.running;
       var res = st && st.result;
+      function proposeCard() {
+        if (!res || !res.ok) return;
+        if (!window.confirm("根据指导报告创建候选任务卡？会以 todo 状态创建，需 Master 复核后再执行。")) return;
+        var title = window.prompt("候选卡标题", "Guide建议：" + res.dimension + "（" + new Date().toLocaleDateString() + "）");
+        if (!title) return;
+        var owner = window.prompt("Owner（modeler|coder|writer）", "coder");
+        if (!owner || ["modeler", "coder", "writer"].indexOf(owner) < 0) { setMsg("Owner 非法"); return; }
+        var priority = window.prompt("优先级（P0|P1|P2）", "P1");
+        if (!priority || ["P0", "P1", "P2"].indexOf(priority) < 0) { setMsg("优先级非法"); return; }
+        var desc = "来源：Guide 指导报告 " + (res.reportPath || "") + "\n建议：请 Master 复核后拆分/执行。";
+        apiCall("POST", "/api/tasks", { title: title, owner: owner, priority: priority, desc: desc }).then(function (r) {
+          if (r && r.ok) setMsg("已创建候选卡 " + r.id + "（todo，待 Master 复核）");
+          else setMsg((r && r.error) || "创建失败");
+        }).catch(function (e) { setMsg(String(e)); });
+      }
       return el(Fragment, null,
         el("div", { className: "mmcas-row" },
           el("div", { className: "mmcas-sec", style: { flex: 1, marginBottom: 0 } }, "Guide（指导者）· 方向 / 模型 / 实现路线"),
@@ -790,7 +834,8 @@ window.__ModuleLoader__.load({
             ? ("✓ " + res.dimension + " 指导完成 · " + res.elapsedS + "s · ≈¥" + res.estFee + (res.usage ? (" · in=" + (res.usage.input_tokens || "?") + " out=" + (res.usage.output_tokens || "?")) : ""))
             : ("✗ " + (res.error || "失败")),
           res.ok && res.reportPath ? el("div", { className: "r" }, String(res.reportPath)) : null,
-          res.ok && res.notice ? el("div", { className: "r" }, "通知已发送: " + res.notice) : null
+          res.ok && res.notice ? el("div", { className: "r" }, "通知已发送: " + res.notice) : null,
+          res.ok ? el("button", { className: "mmcas-btn-ghost", style: { marginTop: "6px" }, onClick: proposeCard }, "转候选任务卡") : null
         ) : null,
         bh ? el("div", { className: "mmcas-empty" + ((bh.ok && bh.bridge && !bh.bridge.lastUpstreamError) ? "" : " warn") },
           bh.ok
@@ -799,6 +844,13 @@ window.__ModuleLoader__.load({
                 ? (" · ⚠ 最近上游错误 " + (bh.bridge.lastUpstreamError.status || "?") + "（" + String(bh.bridge.lastUpstreamError.at || "").slice(0, 19) + "）")
                 : (bh.bridge.lastSuccessAt ? (" · 最近成功 " + String(bh.bridge.lastSuccessAt).slice(0, 19)) : " · 尚无调用记录")))
             : ("桥：✗ " + (bh.error || "不可达") + "（默认通道将失败；检查 3220 或改配置走外部端点）")) : null,
+        st && st.history && st.history.length ? el("div", { className: "mmcas-sec" }, "最近指导") : null,
+        st && st.history && st.history.length ? st.history.slice(0, 5).map(function (h) {
+          return el("div", { className: "mmcas-empty", key: h.id },
+            "[" + h.status + "] " + h.dimension + " · " + String(h.startedAt || "").slice(0, 19) +
+            (h.reportPath ? " · " + String(h.reportPath).split(/[\\/]/).pop() : "") +
+            (h.error ? " · " + h.error : ""));
+        }) : null,
         el("div", { className: "mmcas-empty" }, "报告落盘于工作区 guidance/ 目录。Guide 只给方向与路线；执行仍由三名执行手完成。")
       );
     }

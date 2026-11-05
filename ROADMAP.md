@@ -45,15 +45,16 @@
 - [x] **会话注入**：query/task-handoff/stop 按 urgency 走 followup/steer，复用 poller 注入与 scope→会话解析
 - [x] **notices 降级**：不可达/503 自动写 notices（保留 kind/urgency/scope）；面板与 CLI 均显式提示回落
 - [x] **面板 + CLI**：在线 peer / 收发/失败/回落计数；消息收发入口；桌面端沿用同一面板宿主与端口
-- [x] **测试**：48 项 A2A 测试（核心 22 / 面板适配 10 / 面板集成 9 / CLI 7），覆盖 ping/query/幂等/超时/限流/非法输入/降级
+- [x] **测试**：57 项 A2A 测试（核心 22 / 面板适配 10 / 面板集成 13 / CLI 12），覆盖 ping/query/幂等/超时/限流/非法输入/降级/token 轮换
 
 ### M2 · A2A 加固（约 1–2 周）
 
 - [x] **每角色独立 token**：`a2a-tokens.json`（role→token），服务端校验 token→from；单 token 回退
-- [ ] **token 轮换/吊销入口**：面板/CLI 一键轮换与吊销（当前改文件后重打包/重跑 setup）
+- [x] **token 轮换/吊销入口**：`a2a.mjs tokens list|rotate|revoke` + 面板总控按钮；轮换后自动重启本端 A2A（其他端需同步映射）
 - [x] **稳定性（基础）**：幂等、TTL、速率限制、状态落盘、Broken peer 自动回落
 - [x] **心跳/peer 探测**：面板每 60s ping 在线 peer，展示 RTT/离线
-- [ ] **稳定性（补强）**：重连、背压、消息分片、离线队列上限
+- [x] **重连/退避**：客户端指数退避；429 返回 `Retry-After`；离线/失败=notices 回落
+- [ ] **背压/消息分片/队列上限**（可选增强）
 - [x] **可观测**：面板显示 peer 在线数、收/发/失败/回落计数与最近错误；日志不打印 token
 - [x] **打包安装**：`pack.mjs` 生成/注入每角色 token 映射，`setup.bat` 复制 token + 防火墙规则，`write-config` 写 `a2aPort`（web/desktop 均生效），`audit-recheck.sh` 校验
 - [ ] **实机演练**：三端 Tailscale 下 A2A ⇄ notices 故障切换；断网/重启/重复投递；Slave→Master 19400 ACL 放行
@@ -73,7 +74,7 @@
 - [x] **WebTTY（半交互 MVP）**：Master 终端 + 命令审计 + Slave 403；完整 PTY 待后续
 - [x] **面板**：通道状态可见、消息可发可收；离线/降级显式提示（含桌面端）
 - [x] **技能/审计**：新增 3 个角色技能；Reviewer 收敛 model/code，Guide 增加 direction/model/code；旧包兼容
-- [x] **回归（本地）**：A2A + notices + poller + memory + audit 全绿
+- [x] **回归（本地）**：A2A + notices + poller + memory + audit + Guide/终端/归档 全绿
 - [ ] **回归（发行）**：三端重打包与实机演练通过
 - [x] **文档**：design §17 / ROADMAP / secrets-registry / README / core README 同步
 
@@ -97,8 +98,8 @@
 - [x] **面板**：新增「指导室」（仅 Master），「审阅室」更名「审核室」并收敛为 model/code；两室均支持配置、状态、预算确认、报告与通知
 - [x] **配置/预算**：默认本地桥 3220；Guide 阈值 ¥50，Reviewer ¥30；key 存 `.credentials.yaml`，不回显；材料脱敏与字符上限沿用 v1.2
 - [x] **测试**：Guide 9 项（配置/dry-run/全链/维度校验）+ 面板 Guide 全链 7 项；Reviewer 16 项回归通过
-- [ ] **工作项持久化**：跨重启恢复/重试队列/历史列表（对齐 superagent 的 Ticket/Assignment/Report）
-- [ ] **Guide→任务卡联动**：把指导建议转为候选任务卡（需人类确认，不自动改卡）
+- [x] **工作项持久化**：`experts-state.json` 记录 Guide/Reviewer 任务；面板显示最近历史；重启把 running 标记 interrupted；8 项测试
+- [x] **Guide→任务卡联动**：指导完成后可一键「转候选任务卡」（todo，需 Master 确认/复核，不自动执行）
 - [ ] **实机专家调用**：三端网络/桥/专家模型费用标定
 
 ## v1.2 · 实战修订（已完成，2026-09-16 发布）
@@ -121,8 +122,8 @@
 ## English
 
 - Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (in progress; A2A MVP) → **v1.6** (in progress; Guide/Reviewer).
-- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, per-role token auth, idempotency/TTL/rate limits/state persistence, heartbeat/RTT probes, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config`), panel status/send, desktop-compatible; 48 A2A tests (core 22 / adapter 10 / panel 9 / CLI 7). Remaining: token rotation/revocation UI, reconnect/backpressure, real three-end Tailscale drill + Slave→Master 19400 ACL, full PTY WebTTY, Guide/Reviewer work-item persistence.
-- **v1.6 (in progress; Guide / Reviewer)**: two expert roles integrated from the former external B-Audit flow — **Guide** (Master-only; stronger model; direction / model / implementation routes; `direction|model|code`) and **Reviewer** (model/code only; A/B/C findings with evidence; paper hidden). Shared runner `audit-run.mjs --mode reviewer|guide`, configs `reviewer.json`/`guide.json`, reports `audit/`/`guidance/`, panel rooms, budget guards, superagent-inspired explicit-request / one-work-item / report-only discipline; guide 9 + panel 7 tests and reviewer 16 regressions.
+- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, per-role token auth with rotate/revoke, idempotency/TTL/rate limits/state persistence, heartbeat/RTT probes, exponential backoff + 429 Retry-After, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config/tokens`), panel status/send, desktop-compatible; 57 A2A tests (core 22 / adapter 10 / panel 13 / CLI 12). Remaining: backpressure/message fragmentation, real three-end Tailscale drill + Slave→Master 19400 ACL, full PTY WebTTY.
+- **v1.6 (in progress; Guide / Reviewer)**: two expert roles integrated from the former external B-Audit flow — **Guide** (Master-only; stronger model; direction / model / implementation routes; `direction|model|code`) and **Reviewer** (model/code only; A/B/C findings with evidence; paper hidden). Shared runner `audit-run.mjs --mode reviewer|guide`, configs `reviewer.json`/`guide.json`, reports `audit/`/`guidance/`, panel rooms, budget guards, persistent expert work items (`experts-state.json` + history/restart recovery), Guide→candidate task card, superagent-inspired explicit-request / one-work-item / report-only discipline; guide 9 + panel 7 + expert-state 8 tests and reviewer 16 regressions. Remaining: real expert-model cost calibration.
 - **v1.4 (feature-complete)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; 87-test regression.
 - **v1.3 (shipped)**: full dsh 0.2.1 support for CLI and Desktop; merge-based profile configuration; one-click Desktop onboarding (`MMCAS-Desktop`, isolated `DSH_HOME`, panel 19398); standard preset sync (`time-context` / `tool-schedule`); reviewer config migration to `reviewer.json` with legacy `settings.yaml` / `.imported` compatibility; cold-session injection, target-session activity, audit report naming, credentials refs, and localized New Session fixes; full regression.
 - **v1.2 (shipped)**: scheduler core hardening (auto-claim poller into the mainline, fix duplicate/stale dispatch, remove the hard WIP cap, regression tests); sessions & context (enable built-in compaction, per-task session lifecycle, context waterline warnings); cross-end messaging & governance (notices, stop commands, return cards, rework flow); independent audit instance (one-click third-party audits via a local bridge); sync infra (v0.2.1 rollout, migration self-check, watchdog); packaging & defaults.
