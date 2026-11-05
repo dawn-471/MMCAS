@@ -21,7 +21,7 @@ MMCAS 共享核心，三个角色包共用。队友侧对其完全无感知。
 | `register-workspace.mjs` | v1 | 幂等注册 git 仓为 dsh workspace |
 | `profile-patch.mjs` | v1 | dsh profile patch 合并工具：按 id 替换/追加、config 键/块更新、manifest 合并、链接修复 |
 | `setup/` | v1 | setup.bat（9 步带失败汇总）+ start-agent/sync/panel/desktop.bat + enable-a2a.ps1（Tailscale 19400） |
-| `a2a/a2a-protocol.mjs` + `a2a-discovery.mjs` + `a2a-server.mjs` + `a2a-client.mjs` + `a2a.mjs` | v1.5 | Agent 间实时直连：HTTP 19400、团队 token、幂等/TTL/限流、Tailscale peer 发现、notices 回落；CLI send/ping/status/peers/config |
+| `a2a/a2a-protocol.mjs` + `a2a-discovery.mjs` + `a2a-server.mjs` + `a2a-client.mjs` + `a2a.mjs` | v1.5 | Agent 间实时直连：HTTP 19400、每角色 token、幂等/TTL/限流、Tailscale peer 发现、notices 回落；CLI send/ping/status/peers/config |
 
 ## 记忆检索（v1.4）
 

@@ -121,7 +121,7 @@ bash scripts/download-vendor.sh
 ## Roadmap（v1.3.0 已发布 / v1.4 功能完成 / v1.5 A2A / v1.6 专家双角色 进行中）
 
 - **v1.6（进行中）**：Guide / Reviewer 专家双角色（独立配置、审核室/指导室、预算守门、B-Audit 提示词迁入）；后续工作项持久化、Guide→任务卡联动、实机费用标定
-- **v1.5（进行中）**：A2A 直连 MVP + 半交互 WebTTY + 记忆归档；后续每角色 token、重连/背压、完整 PTY、三端演练、技能/审计
+- **v1.5（进行中）**：A2A 直连 MVP + 半交互 WebTTY + 记忆归档；后续 token 轮换/吊销、重连/背压、完整 PTY、三端演练
 - **v1.4（功能完成，待发布）**：向量化记忆检索（零依赖索引、混合/语义检索、语义嵌入、sqlite-vec、面板搜索、87 项回归）
 - **v1.3.0（已发布）**：dsh 0.2.1 全兼容（CLI + 桌面端）、profile 合并、standard preset 同步
 - **桌面端接入**：`MMCAS-Desktop`、独立 `DSH_HOME`、面板 `19398`
