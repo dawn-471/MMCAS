@@ -30,12 +30,16 @@ import { createServer } from 'node:http';
 import { readdirSync, readFileSync, writeFileSync, appendFileSync, unlinkSync, existsSync, statSync, mkdirSync, rmSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { handleMemorySearch } from './memory-api.mjs';
 import { loadA2ACore } from './a2a-core.mjs';
 import { createExpertStore } from './expert-state.mjs';
+
+const PANEL_HERE = path.dirname(fileURLToPath(import.meta.url));
+const requireFromPanel = createRequire(import.meta.url);
 
 export const name = 'mmcas-dsh-panel';
 export const inject = ['clientModules', 'sessions', 'agents', 'sessionController', 'tokenMeter'];
@@ -59,7 +63,8 @@ export function apply(ctx, config = {}) {
   let a2aServer = null;
   let a2aTimer = null;
   const terminal = {
-    proc: null, seq: 0, chunks: [], running: false, startedAt: null, shell: '', cwd: ws, lastError: null,
+    proc: null, pty: null, ptyModule: null, ptyTried: false, kind: 'pipe',
+    seq: 0, chunks: [], running: false, startedAt: null, shell: '', cwd: ws, lastError: null,
   };
   const expertStore = createExpertStore(path.join(local, 'experts-state.json'));
   expertStore.recoverInterrupted();
@@ -983,10 +988,39 @@ export function apply(ctx, config = {}) {
     return { shell: process.env.SHELL || '/bin/bash', args: ['-i'] };
   }
 
+  function loadPty() {
+    if (terminal.ptyTried) return terminal.ptyModule;
+    terminal.ptyTried = true;
+    const cfg = config.terminal && typeof config.terminal === 'object' ? config.terminal : {};
+    const candidates = [];
+    if (cfg.ptyModule) candidates.push(String(cfg.ptyModule));
+    if (config.coreDir) candidates.push(path.join(String(config.coreDir), 'terminal', 'node-pty'));
+    candidates.push(path.join(PANEL_HERE, '..', '..', 'core', 'terminal', 'node-pty'));
+    candidates.push(path.join(PANEL_HERE, '..', '..', '..', 'core', 'terminal', 'node-pty'));
+    for (const candidate of candidates) {
+      try {
+        const mod = requireFromPanel(candidate);
+        if (mod && typeof mod.spawn === 'function') {
+          terminal.ptyModule = mod;
+          return mod;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  function cleanTerminalText(text) {
+    return String(text)
+      .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+      .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+      .replace(/\r/g, '');
+  }
+
   function terminalPush(text) {
-    if (!text) return;
+    const clean = cleanTerminalText(text);
+    if (!clean) return;
     terminal.seq++;
-    terminal.chunks.push({ seq: terminal.seq, at: new Date().toISOString(), text: String(text) });
+    terminal.chunks.push({ seq: terminal.seq, at: new Date().toISOString(), text: clean });
     if (terminal.chunks.length > 800) terminal.chunks.splice(0, terminal.chunks.length - 800);
   }
 
@@ -995,7 +1029,9 @@ export function apply(ctx, config = {}) {
     return {
       ok: true,
       running: terminal.running,
-      pid: terminal.proc ? terminal.proc.pid : null,
+      pid: terminal.pty ? terminal.pty.pid : (terminal.proc ? terminal.proc.pid : null),
+      kind: terminal.kind,
+      pty: !!terminal.pty,
       shell: terminal.shell,
       cwd: terminal.cwd,
       startedAt: terminal.startedAt,
@@ -1007,7 +1043,7 @@ export function apply(ctx, config = {}) {
   }
 
   function terminalOpen() {
-    if (terminal.proc && terminal.running) return { ok: true, already: true, ...terminalSnapshot(terminal.seq) };
+    if ((terminal.proc || terminal.pty) && terminal.running) return { ok: true, already: true, ...terminalSnapshot(terminal.seq) };
     const spec = terminalSpec();
     terminal.chunks = [];
     terminal.seq = 0;
@@ -1015,6 +1051,32 @@ export function apply(ctx, config = {}) {
     terminal.shell = spec.shell;
     terminal.cwd = ws || process.cwd();
     terminal.startedAt = new Date().toISOString();
+    const cfg = config.terminal && typeof config.terminal === 'object' ? config.terminal : {};
+    const pty = cfg.pty === false ? null : loadPty();
+    if (pty) {
+      try {
+        const term = pty.spawn(spec.shell, spec.args, {
+          name: 'xterm-256color',
+          cols: Number(cfg.cols || 120),
+          rows: Number(cfg.rows || 30),
+          cwd: terminal.cwd,
+          env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+        });
+        terminal.pty = term;
+        terminal.kind = 'pty';
+        terminal.running = true;
+        term.onData((data) => terminalPush(data));
+        term.onExit(({ exitCode, signal }) => {
+          terminal.running = false;
+          terminalPush('\n[process exited: ' + (exitCode === undefined ? signal : exitCode) + ']\n');
+          terminal.pty = null;
+        });
+        return { ok: true, already: false, ...terminalSnapshot(0) };
+      } catch (err) {
+        terminal.lastError = String((err && err.message) || err);
+        terminal.pty = null;
+      }
+    }
     try {
       const proc = spawn(spec.shell, spec.args, {
         cwd: terminal.cwd,
@@ -1022,6 +1084,7 @@ export function apply(ctx, config = {}) {
         windowsHide: true,
       });
       terminal.proc = proc;
+      terminal.kind = 'pipe';
       terminal.running = true;
       proc.stdout.setEncoding('utf8');
       proc.stderr.setEncoding('utf8');
@@ -1045,9 +1108,10 @@ export function apply(ctx, config = {}) {
     const text = String(data || '');
     if (!text) return { ok: false, error: 'data 必填' };
     if (text.length > 4096) return { ok: false, error: '单次输入超过 4096 字符' };
-    if (!terminal.proc || !terminal.running) return { ok: false, error: '终端未打开' };
+    if ((!terminal.proc && !terminal.pty) || !terminal.running) return { ok: false, error: '终端未打开' };
     try {
-      terminal.proc.stdin.write(text.endsWith('\n') ? text : text + '\n', 'utf8');
+      if (terminal.pty) terminal.pty.write(text);
+      else terminal.proc.stdin.write(text.endsWith('\n') ? text : text + '\n', 'utf8');
       try {
         mkdirSync(local, { recursive: true });
         appendFileSync(path.join(local, 'terminal-audit.log'), new Date().toISOString() + ' ' + role + ' ' + JSON.stringify(text.slice(0, 1000)) + '\n');
@@ -1059,12 +1123,16 @@ export function apply(ctx, config = {}) {
   }
 
   function terminalClose() {
-    if (!terminal.proc) return { ok: true, running: false };
-    try { terminal.proc.kill(); } catch {}
+    if (!terminal.proc && !terminal.pty) return { ok: true, running: false, kind: terminal.kind };
+    try {
+      if (terminal.pty) terminal.pty.kill();
+      else terminal.proc.kill();
+    } catch {}
     terminal.running = false;
     terminal.proc = null;
+    terminal.pty = null;
     terminalPush('\n[terminal closed]\n');
-    return { ok: true, running: false, seq: terminal.seq };
+    return { ok: true, running: false, kind: terminal.kind, seq: terminal.seq };
   }
 
   // ---------- v1.2：独立审计（W4：经本地桥的第三方专家审计） ----------
@@ -2069,6 +2137,7 @@ export function apply(ctx, config = {}) {
     if (pollerTimer) clearInterval(pollerTimer);
     if (a2aTimer) clearInterval(a2aTimer);
     if (a2aServer) a2aServer.stop().catch(() => {});
+    if (terminal.pty) { try { terminal.pty.kill(); } catch {} }
     if (terminal.proc) { try { terminal.proc.kill(); } catch {} }
     releasePollerLock();
     server.close();

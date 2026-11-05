@@ -61,8 +61,8 @@
 
 ### M3 · 并行项（可与 M1/M2 并行）
 
-- [x] **半交互 WebTTY（MVP）**：Master 从面板打开持久 shell、输入命令、轮询输出、关闭；命令审计写 `terminal-audit.log`；Slave 403；6 项测试
-- [ ] **完整 PTY WebTTY**：Windows PTY spike（`node-pty` 预编译或等价方案），支持 TAB/Ctrl+C/全屏程序；不可行则保留半交互并在面板明示
+- [x] **完整 PTY WebTTY**：随包 `node-pty` 预编译（Windows ConPTY），支持 TAB/Ctrl+C/交互程序；缺失时自动回退 pipes；命令审计、Slave 403；7 项测试
+- [x] **半交互回退**：PTY 不可用时保留持久 shell + 轮询输出 + 审计，面板标注 pipes 模式
 - [x] **角色技能**：新增 `mm-sensitivity-analysis`（建模手）、`mm-experiment-ledger`（编程手）、`mm-figure-number-traceability`（论文手）
 - [x] **审计维度收敛**：Reviewer 从三通用维度收敛为 model/code；Guide 增加 direction/model/code 三分支（替代泛化维度堆叠）
 - [x] **记忆归档**：`memory-archive.mjs --before <date>`（默认 dry-run，`--apply` 移动），旧日文件移入 `memory/<role>/archive/`；搜索默认排除、`--include-archive` 可选；10 项测试
@@ -71,7 +71,7 @@
 
 - [x] **A2A（本地）**：loopback 双实例 ping/query/幂等/限流/错误 token 拒绝/降级全通过
 - [ ] **A2A（实机）**：同 tailnet 两端 ping/query < 2s；Slave→Master 19400 ACL 放行；三端演练
-- [x] **WebTTY（半交互 MVP）**：Master 终端 + 命令审计 + Slave 403；完整 PTY 待后续
+- [x] **WebTTY（PTY）**：Master 终端 + PTY/pipes 自动选择 + 命令审计 + Slave 403
 - [x] **面板**：通道状态可见、消息可发可收；离线/降级显式提示（含桌面端）
 - [x] **技能/审计**：新增 3 个角色技能；Reviewer 收敛 model/code，Guide 增加 direction/model/code；旧包兼容
 - [x] **回归（本地）**：A2A + notices + poller + memory + audit + Guide/终端/归档 全绿
@@ -122,7 +122,7 @@
 ## English
 
 - Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (in progress; A2A MVP) → **v1.6** (in progress; Guide/Reviewer).
-- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, per-role token auth with rotate/revoke, idempotency/TTL/rate limits/state persistence, heartbeat/RTT probes, exponential backoff + 429 Retry-After, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config/tokens`), panel status/send, desktop-compatible; 57 A2A tests (core 22 / adapter 10 / panel 13 / CLI 12). Remaining: backpressure/message fragmentation, real three-end Tailscale drill + Slave→Master 19400 ACL, full PTY WebTTY.
+- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, per-role token auth with rotate/revoke, idempotency/TTL/rate limits/state persistence, heartbeat/RTT probes, exponential backoff + 429 Retry-After, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config/tokens`), panel status/send, full PTY WebTTY via bundled node-pty (pipes fallback), desktop-compatible; 57 A2A tests (core 22 / adapter 10 / panel 13 / CLI 12). Remaining: backpressure/message fragmentation, real three-end Tailscale drill + Slave→Master 19400 ACL.
 - **v1.6 (in progress; Guide / Reviewer)**: two expert roles integrated from the former external B-Audit flow — **Guide** (Master-only; stronger model; direction / model / implementation routes; `direction|model|code`) and **Reviewer** (model/code only; A/B/C findings with evidence; paper hidden). Shared runner `audit-run.mjs --mode reviewer|guide`, configs `reviewer.json`/`guide.json`, reports `audit/`/`guidance/`, panel rooms, budget guards, persistent expert work items (`experts-state.json` + history/restart recovery), Guide→candidate task card, superagent-inspired explicit-request / one-work-item / report-only discipline; guide 9 + panel 7 + expert-state 8 tests and reviewer 16 regressions. Remaining: real expert-model cost calibration.
 - **v1.4 (feature-complete)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; 87-test regression.
 - **v1.3 (shipped)**: full dsh 0.2.1 support for CLI and Desktop; merge-based profile configuration; one-click Desktop onboarding (`MMCAS-Desktop`, isolated `DSH_HOME`, panel 19398); standard preset sync (`time-context` / `tool-schedule`); reviewer config migration to `reviewer.json` with legacy `settings.yaml` / `.imported` compatibility; cold-session injection, target-session activity, audit report naming, credentials refs, and localized New Session fixes; full regression.

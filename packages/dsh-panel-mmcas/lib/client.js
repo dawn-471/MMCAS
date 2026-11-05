@@ -861,6 +861,7 @@ window.__ModuleLoader__.load({
       var _s = useState(0), seq = _s[0], setSeq = _s[1];
       var _r = useState(false), running = _r[0], setRunning = _r[1];
       var _sh = useState(""), shell = _sh[0], setShell = _sh[1];
+      var _k = useState("pipe"), kind = _k[0], setKind = _k[1];
       var _cw = useState(""), cwd = _cw[0], setCwd = _cw[1];
       var _c = useState(""), cmd = _c[0], setCmd = _c[1];
       var _e = useState(""), err = _e[0], setErr = _e[1];
@@ -881,6 +882,7 @@ window.__ModuleLoader__.load({
           setRunning(!!s.running);
           setShell(s.shell || "");
           setCwd(s.cwd || "");
+          setKind(s.kind || "pipe");
           if (s.error) setErr(s.error);
         }).catch(function (e) { setErr(String(e)); });
       }
@@ -895,6 +897,7 @@ window.__ModuleLoader__.load({
             setRunning(!!s.running);
             setShell(s.shell || "");
             setCwd(s.cwd || "");
+            setKind(s.kind || "pipe");
             if (s.chunks && s.chunks.length) { append(s.chunks.map(function (c) { return c.text; }).join("")); setSeq(s.seq); }
           } else setErr((s && s.error) || "打开失败");
         }).catch(function (e) { setErr(String(e)); });
@@ -911,10 +914,10 @@ window.__ModuleLoader__.load({
         apiCall("POST", "/api/terminal/close", {}).then(function () { setRunning(false); });
       }
       return el(Fragment, null,
-        el("div", { className: "mmcas-sec" }, "半交互终端（Master）· WebTTY MVP"),
+        el("div", { className: "mmcas-sec" }, "终端（Master）· WebTTY"),
         el("div", { className: "mmcas-empty" + (err ? " warn" : "") },
-          (running ? "运行中" : "未运行") + " · " + (shell || "shell") + " · cwd " + (cwd || "—") +
-          " · 命令审计写入本地 terminal-audit.log；PTY/TAB/Ctrl+C 待接入"),
+          (running ? "运行中" : "未运行") + " · " + (kind === "pty" ? "PTY" : "pipes") + " · " + (shell || "shell") + " · cwd " + (cwd || "—") +
+          " · 命令审计写入本地 terminal-audit.log；PTY 支持 TAB/Ctrl+C"),
         err ? el("div", { className: "mmcas-empty warn" }, "终端错误：" + err) : null,
         el("pre", { className: "mmcas-console", style: { height: "48vh", maxHeight: "48vh", whiteSpace: "pre-wrap" } }, out || "（打开终端后输出显示在此）"),
         el("div", { className: "mmcas-row", style: { marginTop: "8px" } },

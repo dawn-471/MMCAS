@@ -65,7 +65,12 @@ apply(ctx, {
   autoSync: false,
   coreDir: path.join(REPO, 'packages', 'core'),
   a2a: { enabled: false },
-  terminal: { shell: process.execPath, args: ['-i'] },
+  terminal: {
+    shell: process.execPath,
+    args: ['-i'],
+    pty: true,
+    ptyModule: path.join(REPO, 'vendor', 'node-pty', 'package'),
+  },
 });
 
 const base = 'http://127.0.0.1:' + port;
@@ -74,6 +79,8 @@ console.log('\n[TP1] 半交互终端：打开 / 输入 / 轮询 / 审计');
 {
   const open = await (await fetch(base + '/api/terminal/open', { method: 'POST' })).json();
   check('TP1 打开终端', open.ok && open.running, JSON.stringify(open).slice(0, 120));
+  const ptyAvailable = existsSync(path.join(REPO, 'vendor', 'node-pty', 'package', 'prebuilds', 'win32-x64', 'conpty.node'));
+  check('TP1 PTY/回退类型', open.kind === (ptyAvailable ? 'pty' : 'pipe'), open.kind);
   const input = await (await fetch(base + '/api/terminal/input', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

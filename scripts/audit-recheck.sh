@@ -82,5 +82,10 @@ if [ -e "$ROOT/pkg/core/memory/vec0.dll" ]; then
 else
   echo "  WARN  pkg/core/memory/vec0.dll  — 未随包（JSON 向量回退可用）"
 fi
+if [ -e "$ROOT/pkg/core/terminal/node-pty/prebuilds/win32-x64/conpty.node" ]; then
+  pass=$((pass + 1)); echo "  PASS  pkg/core/terminal/node-pty  — 完整 PTY（可选）"
+else
+  echo "  WARN  pkg/core/terminal/node-pty  — 未随包（终端回退 pipes）"
+fi
 echo "== 汇总: ${pass} passed, ${fail} failed =="
 [ "$fail" -eq 0 ]

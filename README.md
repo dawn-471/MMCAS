@@ -45,7 +45,7 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 - **dsh 内嵌面板（CLI web + 桌面端）**：总控（成员设备 / 同步水位 / 任务轮询器）、任务看板、共享记忆、审核室、指导室；不是独立服务，随 dsh 侧栏运行，自动跟随宿主明暗主题。
 - **专家双角色（v1.6）**：Guide 往前指方向、定关键路径、给 2–3 条攻坚路线；Reviewer 往回查模型/代码漏洞（A/B/C + 证据）。两者都不接任务卡、不执行，报告落 `guidance/` / `audit/` 并通知 Master。
 - **A2A 直连（v1.5 开发中）**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决）；HTTP 19400 + 每角色 token + 幂等/限流，失败自动回落 notices；面板/CLI 双入口，桌面端同宿主。
-- **半交互 WebTTY（v1.5 MVP）**：Master 面板终端可开持久 shell、执行命令并轮询输出；命令审计落本地；Slave 不开放；完整 PTY（TAB/Ctrl+C）待后续。
+- **WebTTY（v1.5）**：Master 面板终端默认走随包 `node-pty`（Windows ConPTY，支持 TAB/Ctrl+C/交互程序），缺失时自动回退 pipes；命令审计落本地，Slave 不开放。
 - **跨设备控制**：Tailscale 组网 + SSH 运维通道；防火墙只放行 Tailscale 网段，Master 不可被反向控制。
 - **多 API 来源**：官方 API 与中转站多 URL / 多 key，一键切换；内置 `codex-bridge` 让“仅接受标准 Codex 客户端”的通道也能接入。
 - **环境同步**：lockfile + 三方同意 + P2P wheelhouse——接收端离线对齐，uv 自动 diff 只装缺失（不碰镜像源）。
@@ -121,7 +121,7 @@ bash scripts/download-vendor.sh
 ## Roadmap（v1.3.0 已发布 / v1.4 功能完成 / v1.5 A2A / v1.6 专家双角色 进行中）
 
 - **v1.6（进行中）**：Guide / Reviewer 专家双角色（独立配置、审核室/指导室、预算守门、B-Audit 提示词迁入）；后续工作项持久化、Guide→任务卡联动、实机费用标定
-- **v1.5（进行中）**：A2A 直连 MVP + 半交互 WebTTY + 记忆归档；后续 token 轮换/吊销、重连/背压、完整 PTY、三端演练
+- **v1.5（进行中）**：A2A 直连 MVP + WebTTY（PTY/pipes）+ 记忆归档；后续背压/消息分片、三端实机演练
 - **v1.4（功能完成，待发布）**：向量化记忆检索（零依赖索引、混合/语义检索、语义嵌入、sqlite-vec、面板搜索、87 项回归）
 - **v1.3.0（已发布）**：dsh 0.2.1 全兼容（CLI + 桌面端）、profile 合并、standard preset 同步
 - **桌面端接入**：`MMCAS-Desktop`、独立 `DSH_HOME`、面板 `19398`
@@ -139,6 +139,7 @@ bash scripts/download-vendor.sh
 ## 致谢
 
 - [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) —— Agent 运行时
+- [node-pty](https://github.com/homebridge/node-pty-prebuilt-multiarch)（MIT）—— 面板 WebTTY 的 PTY 后端（随包预编译）
 - 能力层部分技能蒸馏自社区 MIT 开源项目（明细见 `docs/capability-design.md`）
 
 ## License

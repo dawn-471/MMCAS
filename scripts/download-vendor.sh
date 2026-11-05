@@ -6,12 +6,12 @@ cd "$(dirname "$0")/.."
 V=vendor
 mkdir -p "$V"
 
-echo "[1/5] 探测 Node v22 LTS 最新版本（npmmirror）..."
+echo "[1/6] 探测 Node v22 LTS 最新版本（npmmirror）..."
 NODE_VERSION=$(curl -sL https://npmmirror.com/mirrors/node/index.json | grep -o '"version":"v22\.[0-9.]*"' | head -1 | grep -o 'v22\.[0-9.]*')
 echo "  -> ${NODE_VERSION}"
 curl -L --fail -o "$V/node.zip" "https://npmmirror.com/mirrors/node/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip" &
 
-echo "[2/5] 探测 PortableGit 最新版本（GitHub API，镜像下载）..."
+echo "[2/6] 探测 PortableGit 最新版本（GitHub API，镜像下载）..."
 PG_INFO=$(curl -sL -m 15 "https://api.github.com/repos/git-for-windows/git/releases/latest")
 PG_TAG=$(echo "$PG_INFO" | grep -o '"tag_name": "[^"]*"' | head -1 | sed 's/.*"tag_name": "//; s/"$//')
 PG_FILE=$(echo "$PG_INFO" | grep -o 'PortableGit-[0-9.]*-64-bit.7z.exe' | head -1)
@@ -19,20 +19,26 @@ echo "  -> ${PG_TAG} / ${PG_FILE}"
 if [ -z "$PG_FILE" ]; then echo "  !! PortableGit 探测失败"; exit 1; fi
 curl -L --fail -m 600 -o "$V/portablegit.exe" "https://npmmirror.com/mirrors/git-for-windows/${PG_TAG}/${PG_FILE}" &
 
-echo "[3/5] Tailscale MSI 1.102.3（官方源，已实测 200 OK）..."
+echo "[3/6] Tailscale MSI 1.102.3（官方源，已实测 200 OK）..."
 curl -L --fail -m 600 -o "$V/tailscale.msi" "https://pkgs.tailscale.com/stable/tailscale-setup-1.102.3-amd64.msi" &
 
-echo "[4/5] uv（Windows 单文件，环境同步用；GitHub 直链，需代理时自动读 HTTPS_PROXY）..."
+echo "[4/6] uv（Windows 单文件，环境同步用；GitHub 直链，需代理时自动读 HTTPS_PROXY）..."
 curl -L --fail -m 600 -o "$V/uv.zip" "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip" &
 
 wait
 
-echo "[5/5] sqlite-vec 0.1.9（Windows x64，可选语义向量加速）..."
+echo "[5/6] sqlite-vec 0.1.9（Windows x64，可选语义向量加速）..."
 mkdir -p "$V/sqlite-vec"
 curl -L --fail -m 120 -o "$V/sqlite-vec/sqlite-vec.tgz" "https://registry.npmmirror.com/sqlite-vec-windows-x64/-/sqlite-vec-windows-x64-0.1.9.tgz"
 tar -xzf "$V/sqlite-vec/sqlite-vec.tgz" -C "$V/sqlite-vec"
 cp "$V/sqlite-vec/package/vec0.dll" "$V/sqlite-vec/vec0.dll"
 rm -rf "$V/sqlite-vec/package" "$V/sqlite-vec/sqlite-vec.tgz"
+
+echo "[6/6] node-pty 0.15.0（Windows x64 预编译 PTY，可选）..."
+mkdir -p "$V/node-pty"
+curl -L --fail -m 120 -o "$V/node-pty/package.tgz" "https://registry.npmmirror.com/@homebridge/node-pty-prebuilt-multiarch/-/node-pty-prebuilt-multiarch-0.15.0.tgz"
+tar -xzf "$V/node-pty/package.tgz" -C "$V/node-pty"
+rm -f "$V/node-pty/package.tgz"
 
 echo "=== 下载完成 ==="
 ls -la "$V"

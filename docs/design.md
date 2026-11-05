@@ -219,7 +219,7 @@ default: deepseek
   - 派发前**二次读卡**（只认文件最末状态，防重编号/打回后的过期快照派发）+ 复核"非 doing 且无活跃 claim"；目标会话**排除已处理该卡的会话**（card→session 映射参与去重）。
 - **上下文水位**：`/api/state` 暴露 token-meter 读数（各端最近会话），接近阈值警示（§12.4）。
 - **审核室 / 指导室**（v1.6）：审核室审 model/code；指导室仅 Master（direction/model/code）；报告 + 通知（§14 / §18）。
-- 既述能力：记忆浏览 ✅、设备状态 ✅、provider 切换 UI ✗（用 CLI 切换器，UI 后置）、权限审批 UI ✗、SSH 控制台 ◐（Master 操控门户 /api/exec，非完整 WebTTY）。
+- 既述能力：记忆浏览 ✅、设备状态 ✅、provider 切换 UI ✗（用 CLI 切换器，UI 后置）、权限审批 UI ✗、SSH 控制台 ✅（Master 操控门户 /api/exec + v1.5 WebTTY，PTY/pipes）。
 - 工程约束（多实例并存）：host 数据服务端口必须可配 + EADDRINUSE 防御；client 端 API base 从页面端口推导（3199→3210、3200→3211，其余一律 3210；桌面端 dsh-app:// 固定 19398）；演示/对比用 `--patch` 双实例（同 id 覆盖整份 config，须写全字段）。
 
 ## 8. AutoMM 复用清单
@@ -516,7 +516,7 @@ node a2a.mjs config
 ### 17.8 当前状态与后续
 
 - 已落地：协议/发现/服务端/客户端/CLI、面板状态与发送、通知回落、桌面端、打包/token/防火墙、57 项测试。
-- 待办（M2/M3）：背压/消息分片/队列上限、实机 tailnet 三端演练；完整 PTY WebTTY 见 §19；记忆归档与半交互终端已落地；角色技能/审计维度收敛见 §18。
+- 待办（M2/M3）：背压/消息分片/队列上限、实机 tailnet 三端演练；WebTTY（PTY/pipes）与记忆归档已落地（§19）；角色技能/审计维度收敛见 §18。
 
 ## 18. 专家双角色：Guide / Reviewer（v1.6）
 
@@ -569,23 +569,26 @@ node a2a.mjs config
 - 已落地：Guide/Reviewer 角色包、共享运行器、双层配置、面板两室、B-Audit 提示词迁入、Guide 三分支提示词、预算/脱敏/报告、工作项持久化（`experts-state.json` + 历史 + 重启中断标记）、Guide→候选任务卡、Guide 9 + 面板 7 + expert-state 8 项测试。
 - 待办：实机专家模型调用与费用标定；工作项重试队列（当前失败需重新发起）。
 
-## 19. 半交互 WebTTY（v1.5 M3 MVP）
+## 19. WebTTY（v1.5 M3）
 
 ### 19.1 定位与边界
 
 - 面板内终端，仅 Master 可见/可用；用于远程诊断、查看日志、跑交互式命令，不必另开 SSH 客户端。
-- 当前是**半交互 MVP**：持久 shell 进程 + stdin/stdout 管道 + 轮询输出；不具备完整 PTY 的 TAB 补全、Ctrl+C 信号语义、全屏 TUI。完整 PTY 列入后续 spike。
+- 默认走**完整 PTY**：随包 `node-pty` 预编译（Windows ConPTY），支持 TAB、Ctrl+C、交互式程序与 ANSI 输出（面板侧剥离 ANSI 以 `<pre>` 展示）。
+- `node-pty` 缺失或 `config.terminal.pty=false` 时自动回退 **pipes 半交互**（持久 shell + stdin/stdout + 轮询），面板标注类型，不静默失败。
 - Slave 不开放入站终端；Master 侧仍受 Tailscale ACL 与人类操作约束。
 
 ### 19.2 实现
 
-- 面板宿主维护单终端会话：`{proc, seq, chunks, running, shell, cwd}`；输出按 seq 分块缓存（最多 800 块）。
+- 面板宿主维护单终端会话：`{proc, pty, kind, seq, chunks, running, shell, cwd}`；输出按 seq 分块缓存（最多 800 块）。
+- PTY 加载顺序：`config.terminal.ptyModule` → `coreDir/terminal/node-pty` → 开发/打包相对路径；加载失败回退 pipes。
 - 端点：`GET /api/terminal/status`、`POST /api/terminal/open`、`POST /api/terminal/input`、`GET /api/terminal/poll?since=N`、`POST /api/terminal/close`。
 - 输入逐条写审计日志 `<MMCAS_HOME>/terminal-audit.log`（时间 + 角色 + 命令）；不记录输出；UI 提示不要输入密钥。
 - 默认 shell：Windows `cmd.exe /Q /K chcp 65001`，其他平台 `$SHELL -i`；测试可覆盖 `config.terminal.shell/args`。
-- 面板「终端」抽屉：输出区 + 命令输入 + 清屏/重开/关闭；打开时自动连接，关闭抽屉不杀进程（可重开接管）。
+- 面板「终端」抽屉：输出区 + 命令输入 + 清屏/重开/关闭；打开时自动连接，关闭抽屉不杀进程（可重开接管）；状态显示 PTY/pipes。
 
-### 19.3 当前状态
+### 19.3 打包与当前状态
 
-- 已落地：Master-only 终端、持久 shell、轮询输出、命令审计、Slave 403、6 项面板测试。
-- 待办：完整 PTY（TAB/Ctrl+C/全屏）、多终端标签、输出持久化/回放、命令白名单/审批。
+- `scripts/download-vendor.sh` 拉取 `@homebridge/node-pty-prebuilt-multiarch@0.15.0`；`pack.mjs` 复制到 `pkg/core/terminal/node-pty`（缺失时 WARN，终端回退 pipes）。
+- 已落地：Master-only 终端、完整 PTY + pipes 回退、持久 shell、轮询输出、命令审计、Slave 403、7 项面板测试。
+- 待办（可选）：多终端标签、输出持久化/回放、终端尺寸调整、命令白名单/审批。

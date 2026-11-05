@@ -45,7 +45,7 @@ Three design principles: **human-in-the-loop** (any milestone can be paused or r
 - **Embedded dsh panel (CLI web + Desktop)**: Overview (devices / sync waterline / task poller), Task Board, Shared Memory, Review Room, and Guide Room. Not a standalone service; follows the host theme (light/dark).
 - **Expert dual roles (v1.6)**: Guide sets direction, critical path, and attack routes; Reviewer audits model/code vulnerabilities (A/B/C + evidence). Neither takes task cards or executes; reports go to `guidance/` / `audit/` and notify the Master.
 - **A2A direct channel (v1.5 in progress)**: realtime agent messages over Tailscale (query/reply/task-handoff/stop/ruling); HTTP 19400 + per-role token + idempotency/rate limits, automatic notices fallback; CLI/panel entry points, Desktop-compatible.
-- **Semi-interactive WebTTY (v1.5 MVP)**: the Master can open a persistent shell in the panel, run commands, and poll output; commands are audited locally; Slaves have no terminal; full PTY (TAB/Ctrl+C) is next.
+- **WebTTY (v1.5)**: the Master terminal uses bundled `node-pty` (Windows ConPTY; TAB/Ctrl+C/interactive programs) and falls back to pipes when unavailable; commands are audited locally; Slaves have no terminal.
 - **Cross-machine control**: Tailscale mesh + SSH ops channel; firewall restricts to the Tailscale CIDR, and the Master cannot be controlled back.
 - **Multi-provider APIs**: official APIs and relays with multi-URL / multi-key switching; a built-in `codex-bridge` connects channels that only accept the standard Codex client.
 - **Environment sync**: lockfile + three-party consent + P2P wheelhouse — the receiver aligns offline (uv diffs and installs only what is missing; no mirror touching).
@@ -121,7 +121,7 @@ On a member machine: unzip the bundle → double-click `setup.bat` (≈9 fully a
 ## Roadmap (v1.3.0 released / v1.4 complete / v1.5 A2A / v1.6 Guide-Reviewer in progress)
 
 - **v1.6 (in progress)**: Guide / Reviewer expert roles (separate configs, Audit/Guide rooms, budget guards, B-Audit prompts migrated); next: persistent work items, Guide→task-card proposals, real-model cost calibration
-- **v1.5 (in progress)**: A2A MVP + semi-interactive WebTTY + memory archive; next: token rotation, reconnect/backpressure, full PTY, three-end drill, skills/audit
+- **v1.5 (in progress)**: A2A MVP + WebTTY (PTY/pipes) + memory archive; next: backpressure/message fragmentation, three-end drill
 - **v1.4 (feature-complete, pending release)**: vector memory search (dependency-free index, hybrid/semantic retrieval, embeddings, sqlite-vec, in-panel search, 87-test regression)
 - **v1.3.0 (released)**: full dsh 0.2.1 support (CLI + Desktop), merge-based profile config, standard preset sync
 - **Desktop onboarding**: `MMCAS-Desktop`, isolated `DSH_HOME`, panel `19398`
@@ -139,6 +139,7 @@ See [ROADMAP.md](ROADMAP.md), [Milestones](https://github.com/dawn-471/MMCAS/mil
 ## Acknowledgements
 
 - [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) — the agent runtime
+- [node-pty](https://github.com/homebridge/node-pty-prebuilt-multiarch) (MIT) — PTY backend for the panel WebTTY (bundled prebuilt)
 - Parts of the capability-layer skills are distilled from MIT-licensed community projects (see `docs/capability-design.md`)
 
 ## License
