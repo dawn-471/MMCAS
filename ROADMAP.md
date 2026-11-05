@@ -1,7 +1,7 @@
 # Roadmap
 
 > 本文件与 GitHub 的 [Milestones](https://github.com/dawn-471/MMCAS/milestones) / Issues 同步维护。
-> 当前版本：**v1.3.0（dsh 0.2.1 适配版，2026-10-29 / tag `v1.3.0`）**　开发线：**v1.4（功能完成，待发布）→ v1.5（进行中，A2A MVP）→ v1.6（进行中，Guide/Reviewer）**
+> 当前版本：**v1.6.0（2026-11-05 / tag `v1.6.0`）**，汇总 v1.4 向量记忆检索、v1.5 A2A 直连 / WebTTY、v1.6 Guide / Reviewer 专家双角色；本地回归全绿，实机 Tailnet 演练与专家模型费用标定待完成。下一阶段：**v1.7**
 
 ## v1.3 · dsh 0.2.1 适配（已发布，2026-10-29 / tag `v1.3.0`）
 
@@ -13,7 +13,7 @@
 - [x] **稳定性修复**：冷会话 `prompt` signal、目标会话活跃度、审计报告唯一文件名、credentials `refs` 安全写入、New Session 本地化匹配
 - [x] **回归**：poller 47、audit 16、profile-patch 16、switch-provider 全部通过；notices / taskcard / sync 回归通过
 
-## v1.4 · 向量化记忆检索（功能完成，2026-11-02）
+## v1.4 · 向量化记忆检索（随 v1.6.0 发布，2026-11-02）
 
 - [x] **零依赖向量索引**：中文 bigram + 英文/数字词元 TF-IDF，倒排表 + 余弦相似度；索引缓存于 `MMCAS_HOME/memory-index`，属本机派生数据、不随 git 同步
 - [x] **检索模式**：`memory-search --mode word|vector|hybrid|semantic`，默认 hybrid；保留原词匹配模式并作为无索引降级路径
@@ -24,9 +24,9 @@
 - [x] **面板共享记忆搜索**：共享记忆抽屉搜索框 + 模式/角色筛选 + 分数/回退提示；`GET /api/memory/search` 兼容开发仓与打包布局
 - [x] **记忆维护（提示）**：`--stats --stale-days N` 输出过期条数与最早日期（非破坏性）
 - [x] **回归**：87 项记忆相关单测（基础 28 / 语义 26 / sqlite-vec 17 / 面板 16），覆盖 mock embeddings、批量、鉴权、回退、KNN、元数据过滤、BOM、缓存
-- [ ] **记忆归档工具**：按角色/日期归档旧文件（可选，延后到 v1.5）
+- [x] **记忆归档工具**：`memory-archive.mjs` 按角色/日期归档旧文件（已于 v1.5 M3 完成）
 
-## v1.5 · A2A 直连通道（进行中，2026-11-03）
+## v1.5 · A2A 直连通道（MVP 已落地，2026-11-03）
 
 > 主线：Agent 间实时直连（A2A），补足 git / notices 文件通道的时延；并行：面板 WebTTY、角色技能与审计维度；可选：记忆归档。原则不变：零注册、Tailscale 组网、凭证不入仓、人类在环。
 
@@ -87,7 +87,7 @@
 - 桌面端：A2A 运行在面板宿主内，使用同一 token 文件与 19400 端口，与面板数据端 19398 分离
 - **不在 v1.5 范围**：跨 tailnet 联邦、公网中继、完整 RBAC、独立中心服务
 
-## v1.6 · 专家双角色 Guide / Reviewer（进行中，2026-11-04）
+## v1.6 · 专家双角色 Guide / Reviewer（核心已落地，2026-11-04）
 
 > 参考 `deepseek-ai/dsh-superagent-prototype`（MIT，研究原型）的“少占用人类注意力”原则：只在被请求时运行、一次请求一个工作项、报告即交付、面板只显示需要人处理的事。
 
@@ -111,7 +111,7 @@
 - [x] **同步基建**：sync-daemon v0.2.1 收口与下发、迁移自检（repo 配置刷新）、守护看门狗、凭据额度可见
 - [x] **打包发布**：出厂默认项统一（模型目录 / 视觉能力）、三端重打包与升级流程验证
 
-## 更远（v1.5 之后候选）
+## 更远（v1.6 之后候选）
 
 - 跨 tailnet 联邦 / 公网中继
 - 完整 RBAC / 审批工作流
@@ -121,10 +121,10 @@
 
 ## English
 
-- Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (in progress; A2A MVP) → **v1.6** (in progress; Guide/Reviewer).
-- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, per-role token auth with rotate/revoke, idempotency/TTL/rate limits/state persistence, heartbeat/RTT probes, exponential backoff + 429 Retry-After, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config/tokens`), panel status/send, full PTY WebTTY via bundled node-pty (pipes fallback), desktop-compatible; 57 A2A tests (core 22 / adapter 10 / panel 13 / CLI 12). Remaining: backpressure/message fragmentation, real three-end Tailscale drill + Slave→Master 19400 ACL.
-- **v1.6 (in progress; Guide / Reviewer)**: two expert roles integrated from the former external B-Audit flow — **Guide** (Master-only; stronger model; direction / model / implementation routes; `direction|model|code`) and **Reviewer** (model/code only; A/B/C findings with evidence; paper hidden). Shared runner `audit-run.mjs --mode reviewer|guide`, configs `reviewer.json`/`guide.json`, reports `audit/`/`guidance/`, panel rooms, budget guards, persistent expert work items (`experts-state.json` + history/restart recovery), Guide→candidate task card, superagent-inspired explicit-request / one-work-item / report-only discipline; guide 9 + panel 7 + expert-state 8 tests and reviewer 16 regressions. Remaining: real expert-model cost calibration.
-- **v1.4 (feature-complete)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; 87-test regression.
+- Current: **v1.6.0** (2026-11-05, tag `v1.6.0`), rolling up v1.4 vector memory search, v1.5 A2A / WebTTY, and v1.6 Guide / Reviewer. Local regressions are green; real Tailnet drills and expert-model cost calibration remain. Next: **v1.7**.
+- **v1.5 (MVP shipped)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, per-role token auth with rotate/revoke, idempotency/TTL/rate limits/state persistence, heartbeat/RTT probes, exponential backoff + 429 Retry-After, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config/tokens`), panel status/send, full PTY WebTTY via bundled node-pty (pipes fallback), desktop-compatible; 57 A2A tests (core 22 / adapter 10 / panel 13 / CLI 12). Remaining: backpressure/message fragmentation, real three-end Tailscale drill + Slave→Master 19400 ACL.
+- **v1.6 (core shipped; Guide / Reviewer)**: two expert roles integrated from the former external B-Audit flow — **Guide** (Master-only; stronger model; direction / model / implementation routes; `direction|model|code`) and **Reviewer** (model/code only; A/B/C findings with evidence; paper hidden). Shared runner `audit-run.mjs --mode reviewer|guide`, configs `reviewer.json`/`guide.json`, reports `audit/`/`guidance/`, panel rooms, budget guards, persistent expert work items (`experts-state.json` + history/restart recovery), Guide→candidate task card, superagent-inspired explicit-request / one-work-item / report-only discipline; guide 9 + panel 7 + expert-state 8 tests and reviewer 16 regressions. Remaining: real expert-model cost calibration.
+- **v1.4 (shipped with v1.6.0)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; memory archive; 87-test regression.
 - **v1.3 (shipped)**: full dsh 0.2.1 support for CLI and Desktop; merge-based profile configuration; one-click Desktop onboarding (`MMCAS-Desktop`, isolated `DSH_HOME`, panel 19398); standard preset sync (`time-context` / `tool-schedule`); reviewer config migration to `reviewer.json` with legacy `settings.yaml` / `.imported` compatibility; cold-session injection, target-session activity, audit report naming, credentials refs, and localized New Session fixes; full regression.
 - **v1.2 (shipped)**: scheduler core hardening (auto-claim poller into the mainline, fix duplicate/stale dispatch, remove the hard WIP cap, regression tests); sessions & context (enable built-in compaction, per-task session lifecycle, context waterline warnings); cross-end messaging & governance (notices, stop commands, return cards, rework flow); independent audit instance (one-click third-party audits via a local bridge); sync infra (v0.2.1 rollout, migration self-check, watchdog); packaging & defaults.
-- **Later (after v1.5)**: cross-tailnet federation / public relay, full RBAC / approval workflows, mobile read-only panel.
+- **Later (after v1.6)**: cross-tailnet federation / public relay, full RBAC / approval workflows, mobile read-only panel.

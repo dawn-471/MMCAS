@@ -14,6 +14,18 @@ sync.config.json
 *.pem
 *.key
 
+# 运行期凭据与状态（打包/本机生成，可能含 token、会话内容或命令记录，严禁入仓）
+secrets/
+**/secrets/
+pkg/
+a2a-token.txt
+a2a-tokens.json
+a2a-state.json
+codex-bridge.json
+experts-state.json
+terminal-audit.log
+memory-index/
+
 # 离线组件缓存（本机构建资产，由 scripts/download-vendor.sh 获取）
 vendor/
 

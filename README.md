@@ -6,10 +6,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
-![Status: v1.3.0](https://img.shields.io/badge/Status-v1.3.0-brightgreen.svg)
-![Roadmap: v1.4](https://img.shields.io/badge/Roadmap-v1.4-8A2BE2.svg)
+![Status: v1.6.0](https://img.shields.io/badge/Status-v1.6.0-brightgreen.svg)
+![Roadmap: v1.7](https://img.shields.io/badge/Roadmap-v1.7-8A2BE2.svg)
 
-> 状态：v1.3.0 已发布（2026-10-29，tag `v1.3.0`），完成 dsh 0.2.1（CLI + 桌面端）适配与全链路回归：profile 合并式配置、桌面端一键接入、reviewer.json 迁移、冷会话注入修复；v1.4 已开工 → [ROADMAP.md](ROADMAP.md)
+> 状态：v1.6.0 已发布（2026-11-05，tag `v1.6.0`），汇总 v1.4 向量记忆检索、v1.5 A2A 直连 / WebTTY、v1.6 Guide / Reviewer 专家双角色；本地回归全绿，实机 Tailnet 演练与专家模型费用标定待完成 → [ROADMAP.md](ROADMAP.md)
 
 ## 这是什么
 
@@ -21,14 +21,15 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 
 三条设计原则：**人类在环**（关键节点可随时卡停/改写）、**永不静默丢数据**（同步冲突显式上报，人类裁决）、**零注册一键安装**（成员机不注册任何外部账号）。
 
-## 最新更新（v1.6 专家双角色进行中 / v1.5 A2A MVP / v1.4 功能完成）
+## 最新更新（v1.6.0：专家双角色 / A2A 直连 / 向量记忆 / WebTTY）
 
 - **v1.6 专家双角色**：**Guide（指导者）**仅 Master 发起，用更强专家模型判断方向、关键路径与攻坚路线（direction / model / code）；**Reviewer（审核者）**只审数学模型与代码漏洞（model / code，A/B/C 分级 + 证据）。共享运行器、独立 `guide.json` / `reviewer.json`、审核室 / 指导室、工作项持久化、报告转候选卡、预算守门；参考 `dsh-superagent-prototype` 的“只在被请求时运行、报告即交付”。
-- **v1.5 A2A 直连 MVP**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决），HTTP 19400 + 每角色 token（可轮换/吊销）+ 幂等/TTL/限流；离线或失败自动回落 `notices/`；`a2a.mjs send/ping/status/peers/config` + 面板总控状态/发送；桌面端沿用同一面板宿主与 token，端口与 19398 分离。
+- **v1.5 A2A 直连 MVP**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决），HTTP 19400 + 每角色 token（可轮换/吊销）+ 幂等/TTL/限流；离线或失败自动回落 `notices/`；`a2a.mjs send/ping/status/peers/config/tokens` + 面板总控状态/发送；桌面端沿用同一面板宿主与 token，端口与 19398 分离；57 项 A2A 回归。
+- **v1.5 WebTTY**：Master 面板终端支持完整 PTY（随包 `node-pty` / Windows ConPTY，支持 TAB、Ctrl+C 与交互程序），缺失时自动回退 pipes；命令审计落本地，Slave 不开放；7 项面板终端测试。
 - **v1.4 记忆向量检索**：零依赖本地索引（中文 bigram + 英文/数字词元 TF-IDF + 余弦）＋可选语义嵌入（OpenAI 兼容 `/embeddings`）＋可选 sqlite-vec KNN；`memory-search` 支持 `word|vector|hybrid|semantic`，默认混合，语义失败自动回退。
 - **v1.4 面板搜索**：共享记忆抽屉新增搜索框、模式/角色筛选、分数与降级提示；`GET /api/memory/search` 三端一致，索引缓存于 `MMCAS_HOME`、不随 git 同步。
-- **v1.4 运维**：`--stats --stale-days N` 过期条目提示；`download-vendor.sh` 拉取 sqlite-vec，`pack.mjs` / `audit-recheck.sh` 已接线；87 项记忆相关回归。
-- **v1.3.0 已发布（tag `v1.3.0`）**，以下为 v1.3 内容。
+- **v1.4 运维**：`--stats --stale-days N` 过期条目提示；`memory-archive.mjs` 按日期归档；`download-vendor.sh` 拉取 sqlite-vec，`pack.mjs` / `audit-recheck.sh` 已接线；87 项记忆相关回归。
+- **v1.3.0 已发布（tag `v1.3.0`）**，以下保留 v1.3 内容。
 - **dsh 0.2.1 全兼容（CLI + 桌面端）**：适配 `0.2.1-rc.3`，支持官方 DeepSeek Harness Desktop；统一修复 profile / preset / 会话注入链路。
 - **桌面端一键接入**：新增 `MMCAS-Desktop` 启动器；使用 MMCAS 独立 `DSH_HOME`、自动生成 `profiles/desktop`、面板数据端固定 `19398`；桌面端运行中安全跳过 profile 更新。
 - **profile 合并式配置**：`write-config`、`switch-provider`、`install-bridge` 改为按条合并 `cordis.patch.yml`，保留 dsh 设置、已装插件和自定义 panel 端口；重跑 setup 不再清空。
@@ -44,7 +45,7 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 - **记忆检索（v1.4）**：共享记忆文件流 + 本地向量索引；支持词匹配 / 哈希向量 / 混合 / 语义四种模式，可选 OpenAI 兼容 embeddings 与 sqlite-vec KNN；角色/日期/limit/JSON/stats，索引本机缓存并按文件变更自动重建，面板可直接搜索。
 - **dsh 内嵌面板（CLI web + 桌面端）**：总控（成员设备 / 同步水位 / 任务轮询器）、任务看板、共享记忆、审核室、指导室；不是独立服务，随 dsh 侧栏运行，自动跟随宿主明暗主题。
 - **专家双角色（v1.6）**：Guide 往前指方向、定关键路径、给 2–3 条攻坚路线；Reviewer 往回查模型/代码漏洞（A/B/C + 证据）。两者都不接任务卡、不执行，报告落 `guidance/` / `audit/` 并通知 Master。
-- **A2A 直连（v1.5 开发中）**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决）；HTTP 19400 + 每角色 token + 幂等/限流，失败自动回落 notices；面板/CLI 双入口，桌面端同宿主。
+- **A2A 直连（v1.5）**：Tailscale 内 Agent 间实时消息（询问/回复/任务转交/停止/裁决）；HTTP 19400 + 每角色 token（轮换/吊销）+ 幂等/限流，失败自动回落 notices；面板/CLI 双入口，桌面端同宿主。
 - **WebTTY（v1.5）**：Master 面板终端默认走随包 `node-pty`（Windows ConPTY，支持 TAB/Ctrl+C/交互程序），缺失时自动回退 pipes；命令审计落本地，Slave 不开放。
 - **跨设备控制**：Tailscale 组网 + SSH 运维通道；防火墙只放行 Tailscale 网段，Master 不可被反向控制。
 - **多 API 来源**：官方 API 与中转站多 URL / 多 key，一键切换；内置 `codex-bridge` 让“仅接受标准 Codex 客户端”的通道也能接入。
@@ -52,7 +53,6 @@ MMCAS 是面向**三人数学建模竞赛小队**的协同工作系统。每位�
 - **能力层 skills**：每角色专属技能集（dsh 原生 skills 机制，按需加载）；蒸馏整合自社区 MIT 建模 skill 生态（见 `docs/capability-design.md`）。
 - **会话与上下文（v1.2）**：任务自动接取即开新会话（一卡一会话、打回回原会话续做）；上下文压缩三件套（自动压缩 / `/compact` / 溢出恢复）+ token 水位守门。
 - **跨端通道（v1.2）**：notices 消息层（工作区 git 通道，紧急消息 steer 打断）+ 停止指令 + 回程卡（Slave→Modeler 受限建卡）+ 打回机制（done→todo 必填原因）。
-- **专家双角色（v1.6）**：面板「审核室」对数学模型 / 代码发起独立审核（A/B/C + 证据，预算守门、桥健康可见）；「指导室」仅 Master，用更强专家模型给方向与攻坚路线。
 - **同步守护看门狗（v1.2）**：同步心跳显性化（面板心跳行 + 停滞告警）；启动器自动确保守护进程在跑。
 - **零注册一键安装**：每成员一个 zip 包，解压双击 `setup.bat` 全自动（Tailscale 上线 → SSH → 便携 Git/Node/uv → 克隆工作区 → 安装 dsh → 生成配置 → 自启 + 快捷方式）。
 
@@ -118,21 +118,22 @@ bash scripts/download-vendor.sh
 | `specs/task-card.md` | 任务卡格式与调度规则 |
 | `ROADMAP.md` | 版本规划（与 Milestones / Issues 同步） |
 
-## Roadmap（v1.3.0 已发布 / v1.4 功能完成 / v1.5 A2A / v1.6 专家双角色 进行中）
+## Roadmap（v1.6.0 已发布 / v1.7 规划中）
 
-- **v1.6（进行中）**：Guide / Reviewer 专家双角色（独立配置、审核室/指导室、预算守门、B-Audit 提示词迁入）；后续工作项持久化、Guide→任务卡联动、实机费用标定
-- **v1.5（进行中）**：A2A 直连 MVP + WebTTY（PTY/pipes）+ 记忆归档；后续背压/消息分片、三端实机演练
-- **v1.4（功能完成，待发布）**：向量化记忆检索（零依赖索引、混合/语义检索、语义嵌入、sqlite-vec、面板搜索、87 项回归）
+- **v1.6（已落地）**：Guide / Reviewer 专家双角色（独立配置、审核室/指导室、预算守门、B-Audit 提示词迁入、工作项持久化、Guide→任务卡联动）；待实机专家调用与费用标定
+- **v1.5（MVP 已落地）**：A2A 直连 + WebTTY（PTY/pipes）+ 记忆归档；待三端实机演练 / ACL 放行、背压与消息分片
+- **v1.4（随 v1.6.0 发布）**：向量化记忆检索（零依赖索引、混合/语义检索、语义嵌入、sqlite-vec、面板搜索、87 项回归）
 - **v1.3.0（已发布）**：dsh 0.2.1 全兼容（CLI + 桌面端）、profile 合并、standard preset 同步
 - **桌面端接入**：`MMCAS-Desktop`、独立 `DSH_HOME`、面板 `19398`
 - **配置迁移**：`reviewer.json`、provider/bridge 直写 profile patch、旧 `settings.yaml` 兼容
 - **稳定性**：冷会话注入、目标会话活跃度、审计报告与 credentials 修复
 
-详见 [ROADMAP.md](ROADMAP.md)、[Milestones](https://github.com/dawn-471/MMCAS/milestones) 与 Issues。
+详见 [ROADMAP.md](ROADMAP.md)、[Releases](https://github.com/dawn-471/MMCAS/releases)、[Milestones](https://github.com/dawn-471/MMCAS/milestones) 与 Issues。
 
 ## 隐私与安全
 
 - **仓库零明文**：所有凭证外置（`.gitignore` 覆盖 + `*.example` 占位）；新增凭证渠道须先登记 `docs/secrets-registry.md`。
+- **发布扫描**：发布前对 Git 跟踪树执行 gitleaks；`build/`、`logs/`、`feedback/`、`vendor/` 与比赛工作区均不入仓。
 - **零注册**：成员机不注册任何外部服务，凭据由部署者统一预生成、可单独吊销。
 - **合规姿态**：系统内不含任何自动 AI 标注/声明功能。
 

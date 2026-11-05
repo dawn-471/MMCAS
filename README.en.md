@@ -6,10 +6,10 @@ English | [中文](README.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg)
-![Status: v1.3.0](https://img.shields.io/badge/Status-v1.3.0-brightgreen.svg)
-![Roadmap: v1.4](https://img.shields.io/badge/Roadmap-v1.4-8A2BE2.svg)
+![Status: v1.6.0](https://img.shields.io/badge/Status-v1.6.0-brightgreen.svg)
+![Roadmap: v1.7](https://img.shields.io/badge/Roadmap-v1.7-8A2BE2.svg)
 
-> Status: v1.3.0 is released (2026-10-29, tag `v1.3.0`) with full dsh 0.2.1 compatibility for CLI and Desktop: merge-based profile config, one-click Desktop onboarding, `reviewer.json` migration, cold-session injection fixes; v1.4 is underway → [ROADMAP.md](ROADMAP.md)
+> Status: v1.6.0 is released (2026-11-05, tag `v1.6.0`), rolling up v1.4 vector memory search, v1.5 A2A direct channel / WebTTY, and v1.6 Guide / Reviewer expert roles. Local regressions are green; real Tailnet drills and expert-model cost calibration remain → [ROADMAP.md](ROADMAP.md)
 
 ## What is this
 
@@ -21,13 +21,14 @@ MMCAS is a collaboration system for **three-member mathematical modeling competi
 
 Three design principles: **human-in-the-loop** (any milestone can be paused or rewritten), **never silently lose data** (sync conflicts are surfaced for human arbitration), **zero-registration one-click install** (member machines register nothing external).
 
-## Latest (v1.6 Guide/Reviewer in progress / v1.5 A2A MVP / v1.4 feature-complete)
+## Latest (v1.6.0: expert roles / A2A / vector memory / WebTTY)
 
 - **v1.6 Guide / Reviewer**: **Guide** (Master-only, stronger expert model) judges direction, critical path, and 2–3 attack routes (`direction|model|code`); **Reviewer** audits only the mathematical model and code (A/B/C findings with evidence; paper hidden). Shared runner, separate `guide.json` / `reviewer.json`, Audit Room / Guide Room, persistent work items, report-to-candidate-card, budget guards; inspired by `dsh-superagent-prototype` (act only when asked, report as the deliverable).
-- **v1.5 A2A direct channel MVP**: realtime agent-to-agent messages over Tailscale (query/reply/task-handoff/stop/ruling), HTTP 19400 + per-role token (rotate/revoke) + idempotency/TTL/rate limits; automatic `notices/` fallback; `a2a.mjs send/ping/status/peers/config` plus panel status/send; Desktop uses the same panel host and token, with a port separate from 19398.
+- **v1.5 A2A direct channel MVP**: realtime agent-to-agent messages over Tailscale (query/reply/task-handoff/stop/ruling), HTTP 19400 + per-role token (rotate/revoke) + idempotency/TTL/rate limits; automatic `notices/` fallback; `a2a.mjs send/ping/status/peers/config/tokens` plus panel status/send; Desktop uses the same panel host and token, with a port separate from 19398; 57 A2A regression tests.
+- **v1.5 WebTTY**: the Master terminal supports a full PTY (bundled `node-pty` / Windows ConPTY; TAB, Ctrl+C, interactive programs) and falls back to pipes when unavailable; commands are audited locally; Slaves have no terminal; 7 panel terminal tests.
 - **v1.4 vector memory search**: dependency-free local index (CJK bigrams + Latin/number TF-IDF + cosine) plus optional semantic embeddings (OpenAI-compatible `/embeddings`) and optional sqlite-vec KNN; `memory-search` supports `word|vector|hybrid|semantic`, defaults to hybrid, and falls back automatically.
 - **v1.4 in-panel search**: the Shared Memory drawer gains search, mode/role filters, scores, and fallback hints; `GET /api/memory/search` is consistent across ends; the index cache lives under `MMCAS_HOME` and is never synced via git.
-- **v1.4 operations**: `--stats --stale-days N` stale-entry hints; `download-vendor.sh` fetches sqlite-vec; `pack.mjs` / `audit-recheck.sh` are wired; 87 memory-related regression tests.
+- **v1.4 operations**: `--stats --stale-days N` stale-entry hints; `memory-archive.mjs` archives by date; `download-vendor.sh` fetches sqlite-vec; `pack.mjs` / `audit-recheck.sh` are wired; 87 memory-related regression tests.
 - **v1.3.0 is released (tag `v1.3.0`)**; the following items describe v1.3.
 - **Full dsh 0.2.1 support (CLI + Desktop)**: adapted to `0.2.1-rc.3` and the official DeepSeek Harness Desktop; profile, preset, and session-injection paths are unified.
 - **One-click Desktop onboarding**: new `MMCAS-Desktop` launcher; isolated `DSH_HOME`, generated `profiles/desktop`, fixed panel port `19398`; profile updates are skipped safely while Desktop is running.
@@ -44,7 +45,7 @@ Three design principles: **human-in-the-loop** (any milestone can be paused or r
 - **Memory search (v1.4)**: shared memory file stream + local vector index; word / hash-vector / hybrid / semantic modes, optional OpenAI-compatible embeddings and sqlite-vec KNN; role/date/limit/JSON/stats filters, local cache rebuilt on file changes, searchable from the panel.
 - **Embedded dsh panel (CLI web + Desktop)**: Overview (devices / sync waterline / task poller), Task Board, Shared Memory, Review Room, and Guide Room. Not a standalone service; follows the host theme (light/dark).
 - **Expert dual roles (v1.6)**: Guide sets direction, critical path, and attack routes; Reviewer audits model/code vulnerabilities (A/B/C + evidence). Neither takes task cards or executes; reports go to `guidance/` / `audit/` and notify the Master.
-- **A2A direct channel (v1.5 in progress)**: realtime agent messages over Tailscale (query/reply/task-handoff/stop/ruling); HTTP 19400 + per-role token + idempotency/rate limits, automatic notices fallback; CLI/panel entry points, Desktop-compatible.
+- **A2A direct channel (v1.5)**: realtime agent messages over Tailscale (query/reply/task-handoff/stop/ruling); HTTP 19400 + per-role token (rotate/revoke) + idempotency/rate limits, automatic notices fallback; CLI/panel entry points, Desktop-compatible.
 - **WebTTY (v1.5)**: the Master terminal uses bundled `node-pty` (Windows ConPTY; TAB/Ctrl+C/interactive programs) and falls back to pipes when unavailable; commands are audited locally; Slaves have no terminal.
 - **Cross-machine control**: Tailscale mesh + SSH ops channel; firewall restricts to the Tailscale CIDR, and the Master cannot be controlled back.
 - **Multi-provider APIs**: official APIs and relays with multi-URL / multi-key switching; a built-in `codex-bridge` connects channels that only accept the standard Codex client.
@@ -52,7 +53,7 @@ Three design principles: **human-in-the-loop** (any milestone can be paused or r
 - **Capability-layer skills**: per-role skill sets (native dsh skills, loaded on demand), distilled from MIT-licensed community projects (see `docs/capability-design.md`).
 - **Sessions & context (v1.2)**: auto-claimed tasks open fresh sessions (one card, one session; rework resumes the original session); built-in compaction trio (auto / `/compact` / overflow recovery) plus token waterline guard.
 - **Cross-end channel (v1.2)**: notices layer over the workspace git repo (urgent messages steer), stop directives, return cards (Slave→Modeler limited card creation), and rework flow (done→todo requires a reason).
-- **Independent audit (v1.2)**: one-click third-party expert audits for models / code / final paper via the local codex-bridge, with budget guard (> ¥30 requires confirmation) and bridge health visibility.
+- **Independent audit (v1.2 → v1.6 Reviewer)**: one-click third-party expert audits via the local codex-bridge, with budget guard and bridge health visibility; v1.6 converges the audit dimensions to model/code.
 - **Sync watchdog (v1.2)**: heartbeat is surfaced in the panel with stall alerts; launchers ensure the daemon is running.
 - **Zero-registration one-click install**: one zip per member; double-click `setup.bat` and everything is automated (Tailscale up → SSH → portable Git/Node/uv → clone workspace → install dsh → generate config → autostart + shortcuts).
 
@@ -118,21 +119,22 @@ On a member machine: unzip the bundle → double-click `setup.bat` (≈9 fully a
 | `specs/task-card.md` | Task-card format & scheduling rules |
 | `ROADMAP.md` | Version plan (mirrored to Milestones / Issues) |
 
-## Roadmap (v1.3.0 released / v1.4 complete / v1.5 A2A / v1.6 Guide-Reviewer in progress)
+## Roadmap (v1.6.0 released / v1.7 planned)
 
-- **v1.6 (in progress)**: Guide / Reviewer expert roles (separate configs, Audit/Guide rooms, budget guards, B-Audit prompts migrated); next: persistent work items, Guide→task-card proposals, real-model cost calibration
-- **v1.5 (in progress)**: A2A MVP + WebTTY (PTY/pipes) + memory archive; next: backpressure/message fragmentation, three-end drill
-- **v1.4 (feature-complete, pending release)**: vector memory search (dependency-free index, hybrid/semantic retrieval, embeddings, sqlite-vec, in-panel search, 87-test regression)
+- **v1.6 (shipped)**: Guide / Reviewer expert roles (separate configs, Audit/Guide rooms, budget guards, B-Audit prompts migrated, persistent work items, Guide→task-card proposals); remaining: real expert-model cost calibration
+- **v1.5 (MVP shipped)**: A2A direct channel + WebTTY (PTY/pipes) + memory archive; remaining: three-end Tailnet drill / ACL, backpressure and message fragmentation
+- **v1.4 (shipped with v1.6.0)**: vector memory search (dependency-free index, hybrid/semantic retrieval, embeddings, sqlite-vec, in-panel search, 87-test regression)
 - **v1.3.0 (released)**: full dsh 0.2.1 support (CLI + Desktop), merge-based profile config, standard preset sync
 - **Desktop onboarding**: `MMCAS-Desktop`, isolated `DSH_HOME`, panel `19398`
 - **Config migration**: `reviewer.json`, provider/bridge write active profile patch, legacy `settings.yaml` compatibility
 - **Stability**: cold-session injection, target-session activity, audit report and credentials fixes
 
-See [ROADMAP.md](ROADMAP.md), [Milestones](https://github.com/dawn-471/MMCAS/milestones) and the Issues.
+See [ROADMAP.md](ROADMAP.md), [Releases](https://github.com/dawn-471/MMCAS/releases), [Milestones](https://github.com/dawn-471/MMCAS/milestones) and the Issues.
 
 ## Privacy & Security
 
 - **Zero plaintext in the repo**: all credentials live outside (covered by `.gitignore`, `*.example` placeholders only); every new credential channel must be registered in `docs/secrets-registry.md` first.
+- **Release scanning**: the tracked Git tree is scanned with gitleaks before release; `build/`, `logs/`, `feedback/`, `vendor/`, and the competition workspace are never committed.
 - **Zero registration**: member machines register no external services; credentials are pre-generated and individually revocable by the deployer.
 - **Compliance posture**: the system contains no automatic AI labeling/disclosure features.
 
