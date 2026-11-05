@@ -34,7 +34,7 @@
 
 - [x] **A2A 协议 v1**：envelope `{v, id, from, to, kind, urgency, scope, body, at, replyTo, ttl}`；类型 `ping / query / reply / task-handoff / stop / error / ruling / info`；幂等键、TTL、错误码、消息大小上限（64KB）、非法 from/to/kind 校验
 - [x] **传输选型**：Tailscale 100.x 直连 + HTTP（WS 留作后续）；端口默认 19400（与 web 面板 3210 / 桌面面板 19398 分离）；peer 发现（Tailscale status / 配置覆盖）
-- [x] **鉴权边界**：Tailscale ACL + 应用层团队 token 双保险；拒绝未知 peer/错误 from；日志不打印 token；每角色独立 token 轮换列入 M2
+- [x] **鉴权边界**：Tailscale ACL + 应用层每角色 token 双保险；拒绝未知 peer/错误 from；日志不打印 token；轮换/吊销入口列入 M2
 - [x] **降级契约**：A2A 超时/离线/投递失败 ⇒ 自动回落 `notices/` 文件通道（沿用现有语义、去重与回执）
 - [x] **入口草图**：`a2a.mjs` CLI（send/ping/status/peers/config）+ 面板总控 A2A 状态与发送；测试矩阵与验收清单
 
@@ -45,15 +45,17 @@
 - [x] **会话注入**：query/task-handoff/stop 按 urgency 走 followup/steer，复用 poller 注入与 scope→会话解析
 - [x] **notices 降级**：不可达/503 自动写 notices（保留 kind/urgency/scope）；面板与 CLI 均显式提示回落
 - [x] **面板 + CLI**：在线 peer / 收发/失败/回落计数；消息收发入口；桌面端沿用同一面板宿主与端口
-- [x] **测试**：44 项 A2A 测试（核心 18 / 面板适配 10 / 面板集成 9 / CLI 7），覆盖 ping/query/幂等/超时/限流/非法输入/降级
+- [x] **测试**：48 项 A2A 测试（核心 22 / 面板适配 10 / 面板集成 9 / CLI 7），覆盖 ping/query/幂等/超时/限流/非法输入/降级
 
 ### M2 · A2A 加固（约 1–2 周）
 
-- [ ] **鉴权轮换与最小权限**：每角色独立 token、轮换/吊销（当前为团队共享 token）
+- [x] **每角色独立 token**：`a2a-tokens.json`（role→token），服务端校验 token→from；单 token 回退
+- [ ] **token 轮换/吊销入口**：面板/CLI 一键轮换与吊销（当前改文件后重打包/重跑 setup）
 - [x] **稳定性（基础）**：幂等、TTL、速率限制、状态落盘、Broken peer 自动回落
-- [ ] **稳定性（补强）**：重连/心跳、背压、消息分片、离线队列上限
+- [x] **心跳/peer 探测**：面板每 60s ping 在线 peer，展示 RTT/离线
+- [ ] **稳定性（补强）**：重连、背压、消息分片、离线队列上限
 - [x] **可观测**：面板显示 peer 在线数、收/发/失败/回落计数与最近错误；日志不打印 token
-- [x] **打包安装**：`pack.mjs` 生成/注入团队 token，`setup.bat` 复制 token + 防火墙规则，`write-config` 写 `a2aPort`（web/desktop 均生效），`audit-recheck.sh` 校验
+- [x] **打包安装**：`pack.mjs` 生成/注入每角色 token 映射，`setup.bat` 复制 token + 防火墙规则，`write-config` 写 `a2aPort`（web/desktop 均生效），`audit-recheck.sh` 校验
 - [ ] **实机演练**：三端 Tailscale 下 A2A ⇄ notices 故障切换；断网/重启/重复投递；Slave→Master 19400 ACL 放行
 
 ### M3 · 并行项（可与 M1/M2 并行）
@@ -80,7 +82,7 @@
 - dsh 预览期 API 变动：A2A 走独立模块 + 本地 HTTP，减少对 dsh 内部接口的耦合；消息注入复用面板宿主
 - Windows PTY 需原生依赖；失败则降级为半交互 WebTTY，不阻塞主线
 - Tailscale ACL / 端口策略需部署者配合：需放行 Slave→Master TCP 19400（仅 A2A 消息，非远程控制）；零注册原则不变
-- 消息风暴/重放：幂等键 + TTL + 速率限制 + token；当前 token 为团队共享，轮换/吊销列入 M2
+- 消息风暴/重放：幂等键 + TTL + 速率限制 + 每角色 token；token 轮换/吊销入口列入 M2
 - 桌面端：A2A 运行在面板宿主内，使用同一 token 文件与 19400 端口，与面板数据端 19398 分离
 - **不在 v1.5 范围**：跨 tailnet 联邦、公网中继、完整 RBAC、独立中心服务
 
@@ -119,7 +121,7 @@
 ## English
 
 - Current: **v1.3.0** (dsh 0.2.1 compatibility, 2026-10-29, tag `v1.3.0`). Development line: **v1.4** (feature-complete, pending release) → **v1.5** (in progress; A2A MVP) → **v1.6** (in progress; Guide/Reviewer).
-- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, team-token auth, idempotency/TTL/rate limits/state persistence, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config`), panel status/send, desktop-compatible; 44 A2A tests (core 18 / adapter 10 / panel 9 / CLI 7). Remaining: per-role token rotation, reconnect/heartbeat/backpressure, real three-end Tailscale drill + Slave→Master 19400 ACL, WebTTY, role skills/audit dimensions, optional memory archive.
+- **v1.5 (in progress; A2A MVP shipped locally)**: A2A realtime direct channel — Tailscale 100.x + HTTP on port 19400 (separate from panel 3210/19398), peer discovery, per-role token auth, idempotency/TTL/rate limits/state persistence, heartbeat/RTT probes, session injection (followup/steer), automatic `notices/` fallback, CLI (`a2a.mjs send/ping/status/peers/config`), panel status/send, desktop-compatible; 48 A2A tests (core 22 / adapter 10 / panel 9 / CLI 7). Remaining: token rotation/revocation UI, reconnect/backpressure, real three-end Tailscale drill + Slave→Master 19400 ACL, full PTY WebTTY, Guide/Reviewer work-item persistence.
 - **v1.6 (in progress; Guide / Reviewer)**: two expert roles integrated from the former external B-Audit flow — **Guide** (Master-only; stronger model; direction / model / implementation routes; `direction|model|code`) and **Reviewer** (model/code only; A/B/C findings with evidence; paper hidden). Shared runner `audit-run.mjs --mode reviewer|guide`, configs `reviewer.json`/`guide.json`, reports `audit/`/`guidance/`, panel rooms, budget guards, superagent-inspired explicit-request / one-work-item / report-only discipline; guide 9 + panel 7 tests and reviewer 16 regressions.
 - **v1.4 (feature-complete)**: dependency-free vector memory search (CJK bigram + Latin/number TF-IDF, inverted index, cosine, local index cache under `MMCAS_HOME`); `word|vector|hybrid|semantic` modes; optional OpenAI-compatible embeddings with batch/timeout/model checks and hybrid fallback; optional sqlite-vec `vec0` backend with role/date metadata filtering and JSON fallback; in-panel shared-memory search (`/api/memory/search`); stale-entry stats; 87-test regression.
 - **v1.3 (shipped)**: full dsh 0.2.1 support for CLI and Desktop; merge-based profile configuration; one-click Desktop onboarding (`MMCAS-Desktop`, isolated `DSH_HOME`, panel 19398); standard preset sync (`time-context` / `tool-schedule`); reviewer config migration to `reviewer.json` with legacy `settings.yaml` / `.imported` compatibility; cold-session injection, target-session activity, audit report naming, credentials refs, and localized New Session fixes; full regression.

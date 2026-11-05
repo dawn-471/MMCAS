@@ -48,7 +48,8 @@ export function createA2AServer(options = {}) {
   const role = String(options.role || '');
   if (!ROLES.includes(role)) throw new Error('非法 A2A role: ' + role);
   const token = String(options.token || '');
-  if (!token && !options.allowNoToken) throw new Error('缺少 A2A token');
+  const tokens = (options.tokens && typeof options.tokens === 'object') ? options.tokens : {};
+  if (!token && !Object.keys(tokens).length && !options.allowNoToken) throw new Error('缺少 A2A token');
   const bind = String(options.bind || '127.0.0.1');
   const port = Number(options.port === undefined ? 19400 : options.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('非法 A2A 端口: ' + options.port);
@@ -111,11 +112,15 @@ export function createA2AServer(options = {}) {
     return bucket.count > rateLimitPerMin;
   }
 
-  function authorized(req) {
-    if (!token && options.allowNoToken) return true;
+  function authRole(req) {
+    if (!token && !Object.keys(tokens).length && options.allowNoToken) return '*';
     const header = String(req.headers.authorization || '');
     const got = header.startsWith('Bearer ') ? header.slice(7) : String(req.headers['x-mmcas-token'] || '');
-    return safeEqual(got, token);
+    if (token && safeEqual(got, token)) return '*';
+    for (const [tokenRole, value] of Object.entries(tokens)) {
+      if (safeEqual(got, value)) return tokenRole;
+    }
+    return null;
   }
 
   function sendJson(res, status, body) {
@@ -133,7 +138,7 @@ export function createA2AServer(options = {}) {
     const p = url.pathname;
 
     if (p === '/a2a/v1/ping' && req.method === 'GET') {
-      if (!authorized(req)) {
+      if (!authRole(req)) {
         state.rejected++;
         return sendJson(res, 401, { ok: false, error: 'A2A 鉴权失败' });
       }
@@ -146,7 +151,7 @@ export function createA2AServer(options = {}) {
     }
 
     if (p === '/a2a/v1/status' && req.method === 'GET') {
-      if (!authorized(req)) {
+      if (!authRole(req)) {
         state.rejected++;
         return sendJson(res, 401, { ok: false, error: 'A2A 鉴权失败' });
       }
@@ -154,7 +159,8 @@ export function createA2AServer(options = {}) {
     }
 
     if (p === '/a2a/v1/messages' && req.method === 'POST') {
-      if (!authorized(req)) {
+      const auth = authRole(req);
+      if (!auth) {
         state.rejected++;
         return sendJson(res, 401, { ok: false, error: 'A2A 鉴权失败' });
       }
@@ -189,6 +195,10 @@ export function createA2AServer(options = {}) {
       if (msg.to !== role && msg.to !== 'all') {
         state.rejected++;
         return sendJson(res, 403, { ok: false, error: '消息不是发给本端（to=' + msg.to + '）' });
+      }
+      if (auth !== '*' && msg.from !== auth) {
+        state.rejected++;
+        return sendJson(res, 403, { ok: false, error: '消息 from 与 token 角色不匹配（' + msg.from + ' != ' + auth + '）' });
       }
       const expectedFrom = ipToRole[ip];
       if (expectedFrom && msg.from !== expectedFrom) {

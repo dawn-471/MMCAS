@@ -128,15 +128,24 @@ writeFileSync(path.join(BUILD, 'setup.bat'), setup);
 cpSync(path.join(ROOT, 'packages', 'core', 'setup', 'diagnose.bat'), path.join(BUILD, 'MMCAS-diagnose.bat'));
 
 // 5. 凭证注入（本地读取，绝不落开发仓）
-const a2aTokenFile = path.join(LOCAL, 'a2a-token.txt');
-let a2aToken = existsSync(a2aTokenFile) ? readFileSync(a2aTokenFile, 'utf8').trim() : '';
-if (!a2aToken) {
-  a2aToken = randomBytes(32).toString('base64url');
-  mkdirSync(LOCAL, { recursive: true });
-  writeFileSync(a2aTokenFile, a2aToken + '\n');
-  console.log('[mmcas] 已生成团队 A2A token:', a2aTokenFile);
+const a2aTokensFile = path.join(LOCAL, 'a2a-tokens.json');
+let a2aTokens = {};
+try {
+  if (existsSync(a2aTokensFile)) {
+    const raw = JSON.parse(readFileSync(a2aTokensFile, 'utf8'));
+    for (const role of ['modeler', 'coder', 'writer']) {
+      if (raw && typeof raw[role] === 'string' && raw[role].trim()) a2aTokens[role] = raw[role].trim();
+    }
+  }
+} catch {}
+for (const role of ['modeler', 'coder', 'writer']) {
+  if (!a2aTokens[role]) a2aTokens[role] = randomBytes(32).toString('base64url');
 }
-writeFileSync(path.join(PKG, 'secrets', 'a2a-token.txt'), a2aToken + '\n');
+mkdirSync(LOCAL, { recursive: true });
+writeFileSync(a2aTokensFile, JSON.stringify(a2aTokens, null, 2) + '\n');
+writeFileSync(path.join(PKG, 'secrets', 'a2a-tokens.json'), JSON.stringify(a2aTokens, null, 2) + '\n');
+writeFileSync(path.join(PKG, 'secrets', 'a2a-token.txt'), a2aTokens[ROLE] + '\n');
+console.log('[mmcas] 已生成/更新每角色 A2A token:', a2aTokensFile);
 if (ROLE !== 'modeler') {
   const keys = JSON.parse(readFileSync(path.join(LOCAL, 'tailscale-authkeys.json'), 'utf8'));
   const k = keys[`mmcas-${ROLE}`];

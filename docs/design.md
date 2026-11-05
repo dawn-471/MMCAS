@@ -272,11 +272,11 @@ default: deepseek
 
 - **核心**：`packages/core/a2a/`（protocol / discovery / server / client / CLI），HTTP 端口 19400，Tailscale 100.x 直连。
 - **协议**：`{v,id,from,to,kind,urgency,scope,body,at,replyTo,ttl}`；幂等、TTL、64KB 上限、from/to/kind 校验。
-- **鉴权**：团队 token（包内注入 / 环境变量 / `<MMCAS_HOME>/a2a-token.txt`）+ Tailscale ACL；IP→role 校验。
+- **鉴权**：每角色 token（`<MMCAS_HOME>/a2a-tokens.json`；单 token / 环境变量回退）+ Tailscale ACL；token→from 与 IP→role 双校验。
 - **投递**：面板宿主内 A2A 服务收到消息后复用 `injectToSession`（urgent/stop=steer，其余 queue）；失败/离线自动回落 `notices/`。
 - **入口**：`a2a.mjs send/ping/status/peers/config`；面板总控 A2A 状态 + 消息发送（优先 A2A，失败回落）。
 - **桌面端**：A2A 随面板宿主启动，token 路径与端口一致；面板数据端仍为 19398，A2A 19400。
-- **回归**：44 项 A2A 测试（核心 18 / 适配 10 / 面板 9 / CLI 7）；实机 tailnet 演练与每角色 token 轮换待 M2。
+- **回归**：48 项 A2A 测试（核心 22 / 适配 10 / 面板 9 / CLI 7）；实机 tailnet 演练与 token 轮换/吊销入口待 M2。
 
 ### v1.6 专家双角色 Guide / Reviewer（已落地，2026-11-04）
 
@@ -479,8 +479,8 @@ node memory-index.mjs --workspace <ws> --stats [--stale-days N] [--json]
 
 ### 17.4 鉴权与安全
 
-- Tailscale ACL 负责网络层；应用层要求 `Authorization: Bearer <team token>`，常量时间比较。
-- 团队 token：`pack.mjs` 首次生成并写 `<MMCAS_HOME>/a2a-token.txt`，随包 `secrets/a2a-token.txt`，`setup.bat` 复制到成员机；也可用 `MMCAS_A2A_TOKEN` 覆盖。三端包须在同一构建机打包或复用同一 token 文件，否则 peer 鉴权失败（自动回落 notices）。
+- Tailscale ACL 负责网络层；应用层要求 `Authorization: Bearer <token>`，常量时间比较。
+- 每角色 token：`pack.mjs` 生成/复用 `<MMCAS_HOME>/a2a-tokens.json`（role→token），随包 `secrets/a2a-tokens.json`，`setup.bat` 复制到成员机；服务端按 token 识别发送方角色，并校验 `from` 一致；单 token 文件/`MMCAS_A2A_TOKEN` 作为回退。三端包须复用同一映射。
 - IP→role 校验：服务端按发现结果拒绝 `from` 与来源 IP 不匹配的消息；未知 peer 不投递。
 - 速率限制：默认 120 条/分钟/IP；超出 429。日志不打印 token。
 - 防火墙：`enable-a2a.ps1` 创建入站规则，仅允许 `100.64.0.0/10` 访问 TCP 19400；Tailscale ACL 还需放行 Slave→Master 19400。
@@ -507,15 +507,15 @@ node a2a.mjs config
 
 ### 17.7 打包与运维
 
-- `pack.mjs`：复制 `packages/core/a2a/`、生成/注入团队 token、复制 `enable-a2a.ps1`。
-- `setup.bat`：调用 `enable-a2a.ps1`（Tailscale 网段 19400）并复制 token 到 `%LOCALAPPDATA%\mmcas\a2a-token.txt`。
+- `pack.mjs`：复制 `packages/core/a2a/`、生成/复用每角色 token 映射 `a2a-tokens.json`、复制 `enable-a2a.ps1`。
+- `setup.bat`：调用 `enable-a2a.ps1`（Tailscale 网段 19400）并复制 token 映射到 `%LOCALAPPDATA%\mmcas\a2a-tokens.json`（单 token 回退）。
 - `write-config`：web/desktop profile 的 `mmcas-panel` 均写 `a2aPort`（默认 19400）。
 - `audit-recheck.sh`：校验 A2A 模块、测试、面板适配层、token 与防火墙脚本随包。
 - 默认未配置 token 时 A2A 关闭、notices 照常；不会因 A2A 缺失阻断协作。
 
 ### 17.8 当前状态与后续
 
-- 已落地：协议/发现/服务端/客户端/CLI、面板状态与发送、通知回落、桌面端、打包/token/防火墙、44 项测试。
+- 已落地：协议/发现/服务端/客户端/CLI、面板状态与发送、通知回落、桌面端、打包/token/防火墙、48 项测试。
 - 待办（M2/M3）：每角色 token 轮换、重连/心跳/背压/离线队列、实机 tailnet 三端演练；完整 PTY WebTTY 见 §19；记忆归档与半交互终端已落地；角色技能/审计维度收敛见 §18。
 
 ## 18. 专家双角色：Guide / Reviewer（v1.6）

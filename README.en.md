@@ -24,7 +24,7 @@ Three design principles: **human-in-the-loop** (any milestone can be paused or r
 ## Latest (v1.6 Guide/Reviewer in progress / v1.5 A2A MVP / v1.4 feature-complete)
 
 - **v1.6 Guide / Reviewer**: **Guide** (Master-only, stronger expert model) judges direction, critical path, and 2–3 attack routes (`direction|model|code`); **Reviewer** audits only the mathematical model and code (A/B/C findings with evidence; paper hidden). Shared runner, separate `guide.json` / `reviewer.json`, Audit Room / Guide Room, budget guards; inspired by `dsh-superagent-prototype` (act only when asked, report as the deliverable).
-- **v1.5 A2A direct channel MVP**: realtime agent-to-agent messages over Tailscale (query/reply/task-handoff/stop/ruling), HTTP 19400 + team token + idempotency/TTL/rate limits; automatic `notices/` fallback; `a2a.mjs send/ping/status/peers/config` plus panel status/send; Desktop uses the same panel host and token, with a port separate from 19398.
+- **v1.5 A2A direct channel MVP**: realtime agent-to-agent messages over Tailscale (query/reply/task-handoff/stop/ruling), HTTP 19400 + per-role token + idempotency/TTL/rate limits; automatic `notices/` fallback; `a2a.mjs send/ping/status/peers/config` plus panel status/send; Desktop uses the same panel host and token, with a port separate from 19398.
 - **v1.4 vector memory search**: dependency-free local index (CJK bigrams + Latin/number TF-IDF + cosine) plus optional semantic embeddings (OpenAI-compatible `/embeddings`) and optional sqlite-vec KNN; `memory-search` supports `word|vector|hybrid|semantic`, defaults to hybrid, and falls back automatically.
 - **v1.4 in-panel search**: the Shared Memory drawer gains search, mode/role filters, scores, and fallback hints; `GET /api/memory/search` is consistent across ends; the index cache lives under `MMCAS_HOME` and is never synced via git.
 - **v1.4 operations**: `--stats --stale-days N` stale-entry hints; `download-vendor.sh` fetches sqlite-vec; `pack.mjs` / `audit-recheck.sh` are wired; 87 memory-related regression tests.
@@ -44,7 +44,7 @@ Three design principles: **human-in-the-loop** (any milestone can be paused or r
 - **Memory search (v1.4)**: shared memory file stream + local vector index; word / hash-vector / hybrid / semantic modes, optional OpenAI-compatible embeddings and sqlite-vec KNN; role/date/limit/JSON/stats filters, local cache rebuilt on file changes, searchable from the panel.
 - **Embedded dsh panel (CLI web + Desktop)**: Overview (devices / sync waterline / task poller), Task Board, Shared Memory, Review Room, and Guide Room. Not a standalone service; follows the host theme (light/dark).
 - **Expert dual roles (v1.6)**: Guide sets direction, critical path, and attack routes; Reviewer audits model/code vulnerabilities (A/B/C + evidence). Neither takes task cards or executes; reports go to `guidance/` / `audit/` and notify the Master.
-- **A2A direct channel (v1.5 in progress)**: realtime agent messages over Tailscale (query/reply/task-handoff/stop/ruling); HTTP 19400 + team token + idempotency/rate limits, automatic notices fallback; CLI/panel entry points, Desktop-compatible.
+- **A2A direct channel (v1.5 in progress)**: realtime agent messages over Tailscale (query/reply/task-handoff/stop/ruling); HTTP 19400 + per-role token + idempotency/rate limits, automatic notices fallback; CLI/panel entry points, Desktop-compatible.
 - **Semi-interactive WebTTY (v1.5 MVP)**: the Master can open a persistent shell in the panel, run commands, and poll output; commands are audited locally; Slaves have no terminal; full PTY (TAB/Ctrl+C) is next.
 - **Cross-machine control**: Tailscale mesh + SSH ops channel; firewall restricts to the Tailscale CIDR, and the Master cannot be controlled back.
 - **Multi-provider APIs**: official APIs and relays with multi-URL / multi-key switching; a built-in `codex-bridge` connects channels that only accept the standard Codex client.
@@ -121,7 +121,7 @@ On a member machine: unzip the bundle → double-click `setup.bat` (≈9 fully a
 ## Roadmap (v1.3.0 released / v1.4 complete / v1.5 A2A / v1.6 Guide-Reviewer in progress)
 
 - **v1.6 (in progress)**: Guide / Reviewer expert roles (separate configs, Audit/Guide rooms, budget guards, B-Audit prompts migrated); next: persistent work items, Guide→task-card proposals, real-model cost calibration
-- **v1.5 (in progress)**: A2A MVP + semi-interactive WebTTY + memory archive; next: per-role tokens, reconnect/backpressure, full PTY, three-end drill, skills/audit
+- **v1.5 (in progress)**: A2A MVP + semi-interactive WebTTY + memory archive; next: token rotation, reconnect/backpressure, full PTY, three-end drill, skills/audit
 - **v1.4 (feature-complete, pending release)**: vector memory search (dependency-free index, hybrid/semantic retrieval, embeddings, sqlite-vec, in-panel search, 87-test regression)
 - **v1.3.0 (released)**: full dsh 0.2.1 support (CLI + Desktop), merge-based profile config, standard preset sync
 - **Desktop onboarding**: `MMCAS-Desktop`, isolated `DSH_HOME`, panel `19398`

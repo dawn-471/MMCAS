@@ -154,9 +154,12 @@ if errorlevel 1 (set "WARNED=!WARNED! [7]codex安装失败（PackyAPI通道不�
 :: ---------- 8. 配置生成 ----------
 echo [8/9] 生成配置...
 if not exist "%LOCALAPPDATA%\mmcas" mkdir "%LOCALAPPDATA%\mmcas"
-if exist "pkg\secrets\a2a-token.txt" (
+if exist "pkg\secrets\a2a-tokens.json" (
+  copy /y "pkg\secrets\a2a-tokens.json" "%LOCALAPPDATA%\mmcas\a2a-tokens.json" >nul
+  echo   A2A per-role tokens OK
+) else if exist "pkg\secrets\a2a-token.txt" (
   copy /y "pkg\secrets\a2a-token.txt" "%LOCALAPPDATA%\mmcas\a2a-token.txt" >nul
-  echo   A2A token OK
+  set "WARNED=!WARNED! [8]仅预配共享 A2A token（建议重打包启用每角色 token）"
 ) else (
   set "WARNED=!WARNED! [8]未预配 A2A token（A2A 关闭，notices 仍可用）"
 )

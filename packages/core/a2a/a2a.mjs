@@ -26,6 +26,7 @@ const USAGE = [
   '  --bind <ip>              本端 A2A 绑定/查询地址（默认发现结果）',
   '  --config <file>          a2a.json（默认 <MMCAS_HOME>/a2a.json）',
   '  --token-file <file>      token 文件（默认 <MMCAS_HOME>/a2a-token.txt）',
+  '  --tokens-file <file>     每角色 token 映射（默认 <MMCAS_HOME>/a2a-tokens.json）',
   '  --peer <role=ip>         覆盖 peer 地址（可重复）',
   '  --timeout-ms <n>         请求超时（默认 3000）',
   '  --retries <n>            重试次数（默认 1）',
@@ -77,7 +78,13 @@ function resolveConfig() {
   const role = String(arg('role', process.env.MMCAS_ROLE || file.role || 'modeler'));
   const port = Number(arg('port', process.env.MMCAS_A2A_PORT || file.port || 19400));
   const tokenFile = path.resolve(arg('token-file', file.tokenFile ? path.resolve(home, file.tokenFile) : path.join(home, 'a2a-token.txt')));
-  const token = String(process.env.MMCAS_A2A_TOKEN || readText(tokenFile) || '');
+  const tokensFile = path.resolve(arg('tokens-file', file.tokensFile ? path.resolve(home, file.tokensFile) : path.join(home, 'a2a-tokens.json')));
+  const rawTokens = readJson(tokensFile) || {};
+  const tokens = {};
+  for (const [tokenRole, value] of Object.entries(rawTokens)) {
+    if (ROLES.includes(tokenRole) && typeof value === 'string' && value.trim()) tokens[tokenRole] = value.trim();
+  }
+  const token = String(process.env.MMCAS_A2A_TOKEN || tokens[role] || readText(tokenFile) || '');
   const overrides = {};
   for (const item of argsAll('peer')) {
     const eq = item.indexOf('=');
@@ -93,6 +100,8 @@ function resolveConfig() {
     port,
     token,
     tokenFile,
+    tokens,
+    tokensFile,
     peers,
     bind: String(arg('bind', file.bind || file.selfIp || '')),
     workspace,
@@ -109,7 +118,9 @@ function publicConfig(cfg) {
     role: cfg.role,
     port: cfg.port,
     tokenFile: cfg.tokenFile,
+    tokensFile: cfg.tokensFile,
     hasToken: !!cfg.token,
+    tokenRoles: Object.keys(cfg.tokens),
     peers: cfg.peers,
     bind: cfg.bind,
     workspace: cfg.workspace,
@@ -122,6 +133,7 @@ function clientContext(cfg, peers) {
   return {
     from: cfg.role,
     token: cfg.token,
+    tokens: cfg.tokens,
     port: cfg.port,
     peers: peers || cfg.peers,
     timeoutMs: cfg.timeoutMs,

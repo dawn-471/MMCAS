@@ -274,10 +274,12 @@ window.__ModuleLoader__.load({
       var noticeTargets = myRoleN === "modeler" ? ["coder", "writer", "modeler", "all"] : ["modeler"];
       var inboxList = (notices || []).filter(function (n) { return n.to === myRoleN || n.to === "all" || n.from === myRoleN; }).slice(0, 12);
       var a2a = state && state.a2a;
+      var a2aRtt = a2a && a2a.peers ? Object.keys(a2a.peers).map(function (k) { return a2a.peers[k] && a2a.peers[k].latencyMs; }).filter(function (v) { return typeof v === "number"; }) : [];
+      var a2aAvgRtt = a2aRtt.length ? Math.round(a2aRtt.reduce(function (a, b) { return a + b; }, 0) / a2aRtt.length) : null;
       var a2aLine = el("div", { className: "mmcas-empty" + (a2a && a2a.running ? "" : " warn") },
         a2a
           ? ("A2A：" + (a2a.running
-            ? ("运行中 " + a2a.bind + ":" + a2a.port + (a2a.loopbackOnly ? "（仅本机）" : "") + " · peer " + a2a.peersOnline + "/" + a2a.peersTotal + " 在线 · 收 " + a2a.received + " / 发 " + a2a.sent + (a2a.fallback ? " / 回落 " + a2a.fallback : ""))
+            ? ("运行中 " + a2a.bind + ":" + a2a.port + (a2a.loopbackOnly ? "（仅本机）" : "") + " · peer " + a2a.peersOnline + "/" + a2a.peersTotal + " 在线" + (a2aAvgRtt === null ? "" : " · RTT " + a2aAvgRtt + "ms") + " · 收 " + a2a.received + " / 发 " + a2a.sent + (a2a.fallback ? " / 回落 " + a2a.fallback : ""))
             : ("未启用" + (a2a.error ? "（" + a2a.error + "）" : ""))))
           : "A2A：读取中…");
       var noticesUi = el(Fragment, null,

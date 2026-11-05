@@ -40,6 +40,8 @@ async function sendOne(input, ctx) {
   const peer = ctx.peers && ctx.peers[to];
   if (!peer) return { ok: false, status: 0, error: '未知 peer: ' + to, peer: null };
   if (peer.online === false) return { ok: false, status: 0, error: 'peer 离线: ' + to, peer };
+  const token = ctx.tokens && Object.keys(ctx.tokens).length ? ctx.tokens[from] : ctx.token;
+  if (!token && !ctx.allowNoToken) return { ok: false, status: 0, error: '缺少本端 A2A token（' + from + '）', peer };
   let message;
   try {
     message = makeMessage({
@@ -62,7 +64,7 @@ async function sendOne(input, ctx) {
     try {
       const response = await requestJson(url, {
         method: 'POST',
-        headers: headers(ctx.token),
+        headers: headers(token),
         body: JSON.stringify(message),
       }, Number(ctx.timeoutMs || 3000), ctx.fetchImpl);
       if (response.ok) return { ok: true, status: response.status, response: response.body, peer, id: message.id };
@@ -98,9 +100,10 @@ export async function getPeerStatus(to, ctx = {}) {
   const peer = ctx.peers && ctx.peers[to];
   if (!peer) return { ok: false, status: 0, error: '未知 peer: ' + to };
   if (peer.online === false) return { ok: false, status: 0, error: 'peer 离线: ' + to, peer };
+  const token = ctx.tokens && Object.keys(ctx.tokens).length ? ctx.tokens[ctx.from] : ctx.token;
   const url = peerBaseUrl(peer, ctx.port) + '/a2a/v1/status';
   try {
-    const response = await requestJson(url, { method: 'GET', headers: headers(ctx.token) }, Number(ctx.timeoutMs || 3000), ctx.fetchImpl);
+    const response = await requestJson(url, { method: 'GET', headers: headers(token) }, Number(ctx.timeoutMs || 3000), ctx.fetchImpl);
     return { ok: response.ok, status: response.status, response: response.body, peer };
   } catch (err) {
     return { ok: false, status: 0, error: err.message, peer };
@@ -111,12 +114,13 @@ export async function pingPeer(to, ctx = {}) {
   const peer = ctx.peers && ctx.peers[to];
   if (!peer) return { ok: false, status: 0, error: '未知 peer: ' + to };
   if (peer.online === false) return { ok: false, status: 0, error: 'peer 离线: ' + to, peer };
+  const token = ctx.tokens && Object.keys(ctx.tokens).length ? ctx.tokens[ctx.from] : ctx.token;
   const url = peerBaseUrl(peer, ctx.port) + '/a2a/v1/ping';
   const retries = Number(ctx.retries === undefined ? 1 : ctx.retries);
   let last = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const response = await requestJson(url, { method: 'GET', headers: headers(ctx.token) }, Number(ctx.timeoutMs || 3000), ctx.fetchImpl);
+      const response = await requestJson(url, { method: 'GET', headers: headers(token) }, Number(ctx.timeoutMs || 3000), ctx.fetchImpl);
       if (response.ok) return { ok: true, status: response.status, response: response.body, peer };
       last = { ok: false, status: response.status, error: (response.body && response.body.error) || ('HTTP ' + response.status), peer };
       if (response.status < 500) break;

@@ -735,9 +735,24 @@ export function apply(ctx, config = {}) {
     return rec;
   }
 
+  function a2aTokens() {
+    try {
+      const file = path.join(local, 'a2a-tokens.json');
+      if (!existsSync(file)) return {};
+      const raw = JSON.parse(readFileSync(file, 'utf8'));
+      const out = {};
+      for (const [tokenRole, value] of Object.entries(raw || {})) {
+        if (VALID_ROLES.includes(tokenRole) && typeof value === 'string' && value.trim()) out[tokenRole] = value.trim();
+      }
+      return out;
+    } catch { return {}; }
+  }
+
   function a2aToken() {
     if (a2aCfg.token) return String(a2aCfg.token).trim();
     if (process.env.MMCAS_A2A_TOKEN) return String(process.env.MMCAS_A2A_TOKEN).trim();
+    const tokens = a2aTokens();
+    if (tokens[role]) return tokens[role];
     try {
       const file = path.join(local, 'a2a-token.txt');
       if (existsSync(file)) return readFileSync(file, 'utf8').trim();
@@ -758,6 +773,7 @@ export function apply(ctx, config = {}) {
       port: serverState.port || a2aState.port,
       loopbackOnly: (serverState.bind || a2aState.bind) === '127.0.0.1',
       role,
+      tokenRoles: Object.keys(a2aTokens()),
       source: a2aState.source,
       sourceError: a2aState.sourceError || null,
       peers: a2aState.peers,
@@ -795,6 +811,23 @@ export function apply(ctx, config = {}) {
       peers: a2aCfg.peers,
     });
     applyA2APeers(discovery);
+    if (a2aState.running) {
+      await Promise.all(Object.entries(a2aState.peers).map(async ([peerRole, peer]) => {
+        if (!peer || peer.online === false) return;
+        const started = Date.now();
+        const result = await a2aModules.client.pingPeer(peerRole, {
+          ...a2aClientCtx(),
+          peers: { [peerRole]: peer },
+          timeoutMs: Math.min(Number(a2aCfg.timeoutMs || 3000), 1500),
+          retries: 0,
+        });
+        peer.online = !!result.ok;
+        peer.latencyMs = result.ok ? Date.now() - started : null;
+        peer.lastError = result.ok ? null : (result.error || 'ping failed');
+      }));
+      const list = Object.values(a2aState.peers);
+      a2aState.peersOnline = list.filter((peer) => peer && peer.online !== false).length;
+    }
     return discovery;
   }
 
@@ -818,6 +851,7 @@ export function apply(ctx, config = {}) {
     return {
       from: role,
       token: a2aToken(),
+      tokens: a2aTokens(),
       port: a2aState.port,
       peers: a2aState.peers,
       timeoutMs: Number(a2aCfg.timeoutMs || 3000),
@@ -856,9 +890,10 @@ export function apply(ctx, config = {}) {
       a2aState.error = 'A2A 已禁用（config.a2a.enabled=false）';
       return;
     }
+    const tokens = a2aTokens();
     const token = a2aToken();
-    if (!token) {
-      a2aState.error = '未配置 a2a-token.txt（A2A 关闭，notices 仍可用）';
+    if (!token && !Object.keys(tokens).length) {
+      a2aState.error = '未配置 a2a-token.txt / a2a-tokens.json（A2A 关闭，notices 仍可用）';
       return;
     }
     try {
@@ -875,6 +910,7 @@ export function apply(ctx, config = {}) {
         const server = a2aModules.server.createA2AServer({
           role,
           token,
+          tokens,
           bind: bindAddress,
           port,
           stateFile: path.join(local, 'a2a-state.json'),
@@ -903,6 +939,7 @@ export function apply(ctx, config = {}) {
       a2aState.bind = bind;
       a2aState.port = booted.address.port || port;
       a2aState.error = null;
+      refreshA2APeers().catch(() => {});
       a2aTimer = setInterval(() => { refreshA2APeers().catch(() => {}); }, 60000);
       if (a2aTimer.unref) a2aTimer.unref();
     } catch (err) {

@@ -160,6 +160,39 @@ console.log('\n[A5] 协议格式化');
   check('A5 格式化包含 id/from/body', text.includes(msg.id) && text.includes('来自 coder') && text.includes('请接手 T-102') && text.includes('紧急'));
 }
 
+console.log('\n[A6] 每角色 token：token→from 校验');
+{
+  const tokenServer = createA2AServer({
+    role: 'modeler',
+    tokens: { modeler: 'm-token', coder: 'c-token', writer: 'w-token' },
+    bind: '127.0.0.1',
+    port: 0,
+    onMessage: async () => true,
+  });
+  const addr = await tokenServer.start();
+  const baseCtx = {
+    from: 'coder',
+    tokens: { coder: 'c-token' },
+    port: addr.port,
+    peers: { modeler: { ip: '127.0.0.1', online: true } },
+    timeoutMs: 2000,
+    retries: 0,
+  };
+  const ping = await pingPeer('modeler', baseCtx);
+  check('A6 角色 token ping 成功', ping.ok, ping.error || ping.status);
+  const sent = await sendMessage({ to: 'modeler', kind: 'info', body: '角色 token 测试' }, baseCtx);
+  check('A6 角色 token 发送成功', sent.ok, sent.error || sent.status);
+  const mismatch = await sendMessage({ to: 'modeler', kind: 'info', body: '身份不符' }, {
+    ...baseCtx,
+    from: 'writer',
+    tokens: { writer: 'c-token' },
+  });
+  check('A6 token 角色与 from 不符 => 403', !mismatch.ok && mismatch.status === 403, mismatch.status);
+  const wrong = await pingPeer('modeler', { ...baseCtx, tokens: { coder: 'bad-token' } });
+  check('A6 错误角色 token => 401', !wrong.ok && wrong.status === 401, wrong.status);
+  await tokenServer.stop();
+}
+
 await serverB.stop();
 rmSync(ROOT, { recursive: true, force: true });
 console.log(`\n==== ${pass} passed, ${fail} failed ====`);
